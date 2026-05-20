@@ -8,15 +8,22 @@ import {
 } from '@seta/core';
 import { IdentityError, listMyEffectivePermissions, listRoleGrants } from '@seta/identity';
 import { auth } from '@seta/identity/auth';
+import { PlannerError } from '@seta/planner';
 import { getPool } from '@seta/shared-db';
 import type { Hono } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import type { Pool } from 'pg';
+import type { BoardStreamHub } from './board-stream/hub.ts';
 import { registerAdminAuditRoutes } from './routes/admin-audit.ts';
 import { registerAdminUsersRoutes } from './routes/admin-users.ts';
 import { registerCredentialGate } from './routes/credential-gate.ts';
 import { registerDiscoverRoute } from './routes/discover.ts';
 import { registerMeRoute } from './routes/me.ts';
+import { registerPlannerBoardStreamRoutes } from './routes/planner-board-stream.ts';
+import { registerPlannerBucketsRoutes } from './routes/planner-buckets.ts';
+import { registerPlannerGroupsRoutes } from './routes/planner-groups.ts';
+import { registerPlannerPlansRoutes } from './routes/planner-plans.ts';
+import { registerPlannerTasksRoutes } from './routes/planner-tasks.ts';
 import { registerProfileRoutes } from './routes/profile.ts';
 import { registerSsoConsentRoutes } from './routes/sso-consent.ts';
 import { registerSsoEntraGraphRoutes } from './routes/sso-entra-graph.ts';
@@ -28,6 +35,7 @@ export type BuildServerAppDeps = {
   pool: Pool;
   databaseUrl: string;
   readinessSnapshot?: () => { lastTickAt: Date };
+  boardStreamHub?: BoardStreamHub;
 };
 
 export type BuiltServerApp = {
@@ -124,8 +132,30 @@ export function buildServerApp(
   registerSsoProvidersRoutes(app);
   registerSsoEntraGraphRoutes(app);
   registerTenantSettingsRoutes(app);
+  registerPlannerGroupsRoutes(app);
+  registerPlannerPlansRoutes(app);
+  registerPlannerBucketsRoutes(app);
+  registerPlannerTasksRoutes(app);
+  if (deps.boardStreamHub) {
+    registerPlannerBoardStreamRoutes(app, deps.boardStreamHub);
+  }
 
   app.onError((err, c) => {
+    if (err instanceof PlannerError) {
+      const status =
+        err.code === 'FORBIDDEN'
+          ? 403
+          : err.code === 'NOT_FOUND'
+            ? 404
+            : err.code === 'CONFLICT'
+              ? 409
+              : err.code === 'CROSS_TENANT'
+                ? 403
+                : err.code === 'VALIDATION'
+                  ? 400
+                  : 400;
+      return c.json({ error: err.code, message: err.message, details: err.details }, status);
+    }
     if (err instanceof IdentityError) {
       const status = err.code === 'FORBIDDEN' ? 403 : err.code === 'USER_NOT_FOUND' ? 404 : 400;
       return c.json({ error: err.code, message: err.message }, status);

@@ -11,11 +11,13 @@ import { registerIdentityContributions } from '@seta/identity/register';
 import { createMailTransportConfigStore } from '@seta/integrations';
 import { integrationsDb } from '@seta/integrations/db';
 import { registerIntegrationsContributions } from '@seta/integrations/register';
+import { registerPlannerContributions } from '@seta/planner/register';
 import { createCrypto, createKeyProviderFromEnv, parseCryptoEnv } from '@seta/shared-crypto';
 import { closePools, getPool, initPools } from '@seta/shared-db';
 import { createMailer, resolveTransport } from '@seta/shared-mailer';
 import { createMailerSendTask } from '@seta/shared-mailer/queue';
 import pino from 'pino';
+import { BoardStreamHub } from './board-stream/hub.ts';
 import { buildServerApp, registerAppContributions } from './build.ts';
 import { parseEnv } from './env.ts';
 
@@ -33,6 +35,7 @@ const reg = createContributionRegistry();
 registerCoreContributions(reg);
 registerIdentityContributions(reg);
 registerIntegrationsContributions(reg);
+registerPlannerContributions(reg);
 registerAppContributions(reg);
 
 await runMigrations(reg, { pool: getPool('worker') });
@@ -43,6 +46,9 @@ const dispatcher = await startDispatcher({
   subscribers: [...reg.collected.subscribers],
 });
 log.info('dispatcher started');
+
+const boardStreamHub = new BoardStreamHub();
+boardStreamHub.start();
 
 const mailerLog = log.child({ component: 'mailer' });
 const outboxStore = createOutboxStore({ db: coreDb() });
@@ -93,6 +99,7 @@ const { app } = buildServerApp(reg, {
   pool: getPool('worker'),
   databaseUrl: env.DATABASE_URL,
   readinessSnapshot: () => dispatcher.health(),
+  boardStreamHub,
 });
 
 const server = serve({ fetch: app.fetch, port: env.PORT }, (info) => {
@@ -105,6 +112,7 @@ const shutdown = async (signal: string) => {
   shuttingDown = true;
   log.info({ signal }, 'shutdown begin');
   await new Promise<void>((r) => server.close(() => r()));
+  boardStreamHub.stop();
   await dispatcher.shutdown(15_000);
   await workers.shutdown();
   await closePools();
