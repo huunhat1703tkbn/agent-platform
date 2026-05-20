@@ -256,11 +256,7 @@ export const CssCheck: Story = {
     columns: baseColumns,
   },
   play: async ({ canvas }) => {
-    // The pagination footer uses `border-t border-hairline` and lives below
-    // the table body. We assert the resolved `border-top-color` matches the
-    // light-theme `--color-hairline` token. If tokens.css did not load this
-    // resolves to the browser default (`rgb(0, 0, 0)` or empty) and fails.
-    const footer = canvas.getByText(/1–4 of 4/i).closest('div')?.parentElement;
+    const footer = canvas.getByText(/Showing 1–4 of 4/i).closest('div');
     if (!footer) throw new Error('expected pagination footer');
     const borderTop = getComputedStyle(footer).borderTopColor;
     await expect(borderTop).toBe('rgb(233, 232, 230)');
