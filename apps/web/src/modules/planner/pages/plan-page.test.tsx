@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { axe } from 'jest-axe';
 import { HttpResponse, http } from 'msw';
 import { setupServer } from 'msw/node';
 import type { ReactNode } from 'react';
@@ -129,6 +130,50 @@ describe('PlanPage', () => {
     expect(await screen.findByText('To do')).toBeInTheDocument();
     expect(screen.getByText('Done')).toBeInTheDocument();
     expect(screen.getByText('Wire up DnD')).toBeInTheDocument();
+  });
+
+  it('uses virtualized list when bucket has > 50 cards', async () => {
+    const manyTasks = Array.from({ length: 60 }, (_, i) => ({
+      ...taskOne,
+      id: `t${i}`,
+      sort_order: i,
+    }));
+    server.use(
+      http.get('*/api/planner/v1/plans/p1', () => HttpResponse.json(planFixture)),
+      http.get('*/api/planner/v1/plans/p1/buckets', () =>
+        HttpResponse.json({ buckets: [bucketTodo, bucketDone] }),
+      ),
+      http.get('*/api/planner/v1/tasks', () => HttpResponse.json({ tasks: manyTasks })),
+      http.get('*/api/planner/v1/plans/p1/labels', () => HttpResponse.json({ labels: [] })),
+    );
+    renderWith(
+      <PlanPage
+        planId="p1"
+        filters={EMPTY_FILTERS}
+        onFiltersChange={() => {}}
+        onOpenTask={() => {}}
+        view="board"
+        onViewChange={() => {}}
+      />,
+    );
+    expect(await screen.findByTestId('virtualized-bucket-list')).toBeInTheDocument();
+  });
+
+  it('has no a11y violations on the happy path', async () => {
+    server.use(...seedBoardHandlers());
+    const { container } = renderWith(
+      <PlanPage
+        planId="p1"
+        filters={EMPTY_FILTERS}
+        onFiltersChange={() => {}}
+        onOpenTask={() => {}}
+        view="board"
+        onViewChange={() => {}}
+      />,
+    );
+    await screen.findByText('To do');
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
   });
 
   it('quick-create on a bucket fires createTask with the typed title', async () => {

@@ -1,15 +1,17 @@
 import { DragDropContext, Draggable, Droppable, type DropResult } from '@hello-pangea/dnd';
 import { KanbanBoard, KanbanCard, type KanbanCardTask, KanbanColumn } from '@seta/shared-ui';
-import { type HTMLAttributes, useMemo } from 'react';
+import { type HTMLAttributes, useEffect, useMemo, useRef, useState } from 'react';
 import { PlanFilterBar } from '../components/plan-filter-bar';
 import { PlanPageHeader } from '../components/plan-page-header';
 import { PlanViewSwitcher } from '../components/plan-view-switcher';
+import { VirtualizedBucketList } from '../components/virtualized-bucket-list';
 import { useCreateBucket } from '../hooks/mutations/create-bucket';
 import { useCreateTask } from '../hooks/mutations/create-task';
 import { useMoveTask } from '../hooks/mutations/move-task';
 import { useReorderBucket } from '../hooks/mutations/reorder-bucket';
 import { usePlanBoard } from '../hooks/queries/use-plan-board';
 import { useBoardKeyboard } from '../hooks/use-board-keyboard';
+import { computeNextFocus } from '../state/compute-next-focus';
 import { useSavingIds } from '../state/saving-ids';
 import type { BoardFilters } from '../state/url-state';
 
@@ -46,7 +48,9 @@ export function PlanPage({
   const createTask = useCreateTask(planId);
   const createBucket = useCreateBucket(planId);
   const savingIds = useSavingIds((s) => s.ids);
-  useBoardKeyboard({});
+
+  const [focusedCardId, setFocusedCardId] = useState<string | null>(null);
+  const cardRefs = useRef<Map<string, HTMLElement>>(new Map());
 
   const tasksByBucket = useMemo(() => {
     const map = new Map<string | null, KanbanCardTask[]>();
@@ -90,6 +94,37 @@ export function PlanPage({
     }
     return map;
   }, [boardQ.data, filters, savingIds]);
+
+  // Build a flat bucket structure for computeNextFocus. Derived from boardQ.data.buckets so
+  // the order matches the rendered columns. Falls back to empty when data isn't loaded yet.
+  const structure = useMemo(
+    () => ({
+      buckets: (boardQ.data?.buckets ?? []).map((b) => ({
+        id: b.id,
+        cardIds: (tasksByBucket.get(b.id) ?? []).map((c) => c.id),
+      })),
+    }),
+    [boardQ.data?.buckets, tasksByBucket],
+  );
+
+  useEffect(() => {
+    if (focusedCardId) cardRefs.current.get(focusedCardId)?.focus();
+  }, [focusedCardId]);
+
+  useBoardKeyboard({
+    onMoveFocus: (dir) => setFocusedCardId((prev) => computeNextFocus(prev, dir, structure)),
+    onOpenFocused: () => {
+      if (focusedCardId) onOpenTask(focusedCardId);
+    },
+    onCreateTask: () => {
+      if (!boardQ.data) return;
+      const { plan: p, buckets: bs } = boardQ.data;
+      const bucketId = focusedCardId
+        ? bs.find((b) => (tasksByBucket.get(b.id) ?? []).some((c) => c.id === focusedCardId))?.id
+        : bs[0]?.id;
+      if (bucketId) createTask.mutate({ plan_id: p.id, bucket_id: bucketId, title: 'New task' });
+    },
+  });
 
   if (boardQ.isPending) {
     return <div data-testid="board-skeleton">Loading…</div>;
@@ -141,7 +176,7 @@ export function PlanPage({
       <PlanPageHeader planName={plan.name} bucketCount={buckets.length} taskCount={tasks.length} />
       <div className="plan-toolbar">
         <PlanFilterBar filters={filters} onChange={onFiltersChange} />
-        <PlanViewSwitcher value={view} onChange={onViewChange} gridDisabled />
+        <PlanViewSwitcher value={view} onChange={onViewChange} />
       </div>
 
       <DragDropContext onDragEnd={onDragEnd}>
@@ -180,34 +215,54 @@ export function PlanPage({
                       }}
                       droppable={{}}
                     >
-                      <Droppable droppableId={b.id} type="TASK">
-                        {(dp2, ds2) => (
-                          <div
-                            ref={dp2.innerRef}
-                            {...dp2.droppableProps}
-                            className={ds2.isDraggingOver ? 'is-over' : ''}
-                          >
-                            {(tasksByBucket.get(b.id) ?? []).map((card, ci) => (
-                              <Draggable key={card.id} draggableId={card.id} index={ci}>
-                                {(dpc, dsc) => (
-                                  <KanbanCard
-                                    task={card}
-                                    onOpen={() => onOpenTask(card.id)}
-                                    draggable={{
-                                      ref: dpc.innerRef,
-                                      rootProps: dpc.draggableProps,
-                                      handleProps: dpc.dragHandleProps ?? undefined,
-                                      isDragging: dsc.isDragging,
-                                      extraStyle: dpc.draggableProps.style,
-                                    }}
-                                  />
-                                )}
-                              </Draggable>
-                            ))}
-                            {dp2.placeholder}
-                          </div>
-                        )}
-                      </Droppable>
+                      {(() => {
+                        const list = tasksByBucket.get(b.id) ?? [];
+                        if (list.length <= 50) {
+                          return (
+                            <Droppable droppableId={b.id} type="TASK">
+                              {(dp2, ds2) => (
+                                <div
+                                  ref={dp2.innerRef}
+                                  {...dp2.droppableProps}
+                                  className={ds2.isDraggingOver ? 'is-over' : ''}
+                                >
+                                  {list.map((card, ci) => (
+                                    <Draggable key={card.id} draggableId={card.id} index={ci}>
+                                      {(dpc, dsc) => (
+                                        <KanbanCard
+                                          task={card}
+                                          onOpen={() => onOpenTask(card.id)}
+                                          selected={focusedCardId === card.id}
+                                          draggable={{
+                                            // Compose dnd's innerRef with our cardRefs map so
+                                            // keyboard focus (focusedCardId effect) can call .focus().
+                                            ref: (el) => {
+                                              dpc.innerRef(el);
+                                              if (el) cardRefs.current.set(card.id, el);
+                                              else cardRefs.current.delete(card.id);
+                                            },
+                                            rootProps: dpc.draggableProps,
+                                            handleProps: dpc.dragHandleProps ?? undefined,
+                                            isDragging: dsc.isDragging,
+                                            extraStyle: dpc.draggableProps.style,
+                                          }}
+                                        />
+                                      )}
+                                    </Draggable>
+                                  ))}
+                                  {dp2.placeholder}
+                                </div>
+                              )}
+                            </Droppable>
+                          );
+                        }
+                        // Virtualized buckets don't participate in keyboard navigation:
+                        // rows outside the overscan window aren't mounted, so cardRefs never
+                        // contains their elements and .focus() can't reach them.
+                        return (
+                          <VirtualizedBucketList bucketId={b.id} cards={list} onOpen={onOpenTask} />
+                        );
+                      })()}
                     </KanbanColumn>
                   )}
                 </Draggable>
