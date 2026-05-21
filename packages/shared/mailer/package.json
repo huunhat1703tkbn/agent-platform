@@ -15,8 +15,6 @@
     "email:preview": "email dev --dir src/templates"
   },
   "dependencies": {
-    "@react-email/components": "^1.0.12",
-    "@react-email/render": "^2.0.8",
     "@seta/shared-crypto": "workspace:^",
     "nodemailer": "^8.0.7",
     "pino": "^10.3.1",
@@ -29,8 +27,8 @@
     "@seta/shared-testing": "workspace:^",
     "@types/node": "^25.9.1",
     "@types/nodemailer": "^8.0.0",
-    "@types/react": "^19.2.14",
+    "@types/react": "^19.2.15",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.6"
+    "vitest": "^4.1.7"
   }
 }

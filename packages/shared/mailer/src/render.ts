@@ -1,5 +1,5 @@
-import { render } from '@react-email/render';
 import { createElement, type JSX } from 'react';
+import { render } from 'react-email';
 import TestSend, { subject as testSendSubject } from './templates/_test-send/email.tsx';
 import FailedLoginAlert, {
   subject as failedLoginAlertSubject,

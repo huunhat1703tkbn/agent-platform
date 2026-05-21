@@ -21,6 +21,7 @@ export * from './composites/kanban-column';
 export * from './composites/kbd-hint';
 export * from './composites/label-chip';
 export * from './composites/left-nav';
+export * from './composites/page-chrome';
 export * from './composites/priority-icon';
 export * from './composites/progress-bar';
 export * from './composites/side-panel';

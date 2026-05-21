@@ -1,6 +1,7 @@
 /** @jsxImportSource react */
-import { Body, Button, Container, Head, Heading, Html, Text } from '@react-email/components';
+
 import type { JSX } from 'react';
+import { Body, Button, Container, Head, Heading, Html, Text } from 'react-email';
 import type { MailTemplateProps } from '../../types.ts';
 
 type Props = MailTemplateProps['invite'];

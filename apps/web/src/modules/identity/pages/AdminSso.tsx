@@ -1,7 +1,9 @@
-import { Alert, AlertDescription, Skeleton } from '@seta/shared-ui';
+import { Alert, AlertDescription, Button, PageChrome, Skeleton } from '@seta/shared-ui';
+import { ExternalLink } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import type { SsoProviderRowDto } from '../api/sso-client.ts';
 import { listProviders } from '../api/sso-client.ts';
+import { ComingSoonProvidersCard } from '../components/ComingSoonProvidersCard.tsx';
 import { EntraProviderCard } from '../components/EntraProviderCard.tsx';
 import { useSession } from '../components/SessionProvider.tsx';
 import { SignInMethodsCard } from '../components/SignInMethodsCard.tsx';
@@ -9,6 +11,15 @@ import { SignInMethodsCard } from '../components/SignInMethodsCard.tsx';
 interface AdminSsoProps {
   status?: string;
   error?: string;
+}
+
+function summarize(providers: SsoProviderRowDto[] | null): string {
+  if (providers === null) return 'Loading…';
+  const total = providers.length;
+  const active = providers.filter((p) => p.enabled).length;
+  if (total === 0) return 'No providers configured';
+  const noun = total === 1 ? 'provider' : 'providers';
+  return `${total} ${noun} · ${active} active`;
 }
 
 export function AdminSso({ status, error }: AdminSsoProps) {
@@ -19,7 +30,7 @@ export function AdminSso({ status, error }: AdminSsoProps) {
 
   const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: refreshKey is a manual trigger; incrementing it forces a re-fetch
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refreshKey is a manual trigger
   useEffect(() => {
     let cancelled = false;
     const t = setTimeout(() => {
@@ -41,41 +52,59 @@ export function AdminSso({ status, error }: AdminSsoProps) {
   const hasEnabledProvider = providers?.some((p) => p.enabled) ?? false;
 
   return (
-    <div className="space-y-6 px-7 py-6">
-      <h1 className="text-2xl font-semibold">SSO Configuration</h1>
+    <PageChrome
+      breadcrumb={['Admin']}
+      title="Single sign-on"
+      subtitle={summarize(providers)}
+      actions={
+        <Button variant="ghost" size="sm" asChild>
+          <a
+            href="https://learn.microsoft.com/en-us/entra/identity-platform/quickstart-register-app"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5"
+          >
+            <ExternalLink aria-hidden className="size-3.5" />
+            Entra docs
+          </a>
+        </Button>
+      }
+    >
+      <div className="mx-auto max-w-[880px] space-y-4 px-6 py-6">
+        {status === 'consent_granted' && (
+          <Alert>
+            <AlertDescription>Admin consent granted successfully.</AlertDescription>
+          </Alert>
+        )}
+        {status === 'consent_failed' && (
+          <Alert variant="destructive">
+            <AlertDescription>Admin consent failed{error ? `: ${error}` : '.'}</AlertDescription>
+          </Alert>
+        )}
+        {fetchError && (
+          <Alert variant="destructive">
+            <AlertDescription>{fetchError}</AlertDescription>
+          </Alert>
+        )}
 
-      {status === 'consent_granted' && (
-        <Alert>
-          <AlertDescription>Admin consent granted successfully.</AlertDescription>
-        </Alert>
-      )}
-      {status === 'consent_failed' && (
-        <Alert variant="destructive">
-          <AlertDescription>Admin consent failed{error ? `: ${error}` : '.'}</AlertDescription>
-        </Alert>
-      )}
-
-      {fetchError && (
-        <Alert variant="destructive">
-          <AlertDescription>{fetchError}</AlertDescription>
-        </Alert>
-      )}
-
-      {providers === null && !fetchError ? (
-        <div className="space-y-4">
-          <Skeleton className="h-40 w-full rounded-lg" />
-          <Skeleton className="h-28 w-full rounded-lg" />
-        </div>
-      ) : (
-        <div className="space-y-4">
-          <EntraProviderCard row={entraRow} onChanged={refresh} />
-          <SignInMethodsCard
-            localPasswordDisabled={session.tenant_local_password_disabled}
-            hasEnabledProvider={hasEnabledProvider}
-            onChanged={refresh}
-          />
-        </div>
-      )}
-    </div>
+        {providers === null && !fetchError ? (
+          <div className="space-y-4">
+            <Skeleton className="h-56 w-full rounded-lg" />
+            <Skeleton className="h-32 w-full rounded-lg" />
+            <Skeleton className="h-44 w-full rounded-lg" />
+          </div>
+        ) : (
+          <>
+            <EntraProviderCard row={entraRow} onChanged={refresh} />
+            <SignInMethodsCard
+              localPasswordDisabled={session.tenant_local_password_disabled}
+              hasEnabledProvider={hasEnabledProvider}
+              onChanged={refresh}
+            />
+            <ComingSoonProvidersCard />
+          </>
+        )}
+      </div>
+    </PageChrome>
   );
 }

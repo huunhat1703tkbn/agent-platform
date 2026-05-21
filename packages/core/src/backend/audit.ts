@@ -14,6 +14,9 @@ export interface AuditRow {
   trace_id: string | null;
 }
 
+export type AuditSortBy = 'occurred_at' | 'event_type';
+export type AuditSortDir = 'asc' | 'desc';
+
 export interface AuditQueryOpts {
   tenant_id: string;
   event_type?: string;
@@ -22,12 +25,33 @@ export interface AuditQueryOpts {
   to?: string;
   limit: number;
   offset: number;
+  sort_by?: AuditSortBy;
+  sort_dir?: AuditSortDir;
 }
 
 export async function queryAudit(
   opts: AuditQueryOpts,
 ): Promise<{ rows: AuditRow[]; total: number }> {
-  const { tenant_id, event_type, aggregate_id, from: fromTs, to: toTs, limit, offset } = opts;
+  const {
+    tenant_id,
+    event_type,
+    aggregate_id,
+    from: fromTs,
+    to: toTs,
+    limit,
+    offset,
+    sort_by = 'occurred_at',
+    sort_dir = 'desc',
+  } = opts;
+
+  const orderBy =
+    sort_by === 'event_type'
+      ? sort_dir === 'asc'
+        ? sql`ORDER BY event_type ASC, occurred_at DESC`
+        : sql`ORDER BY event_type DESC, occurred_at DESC`
+      : sort_dir === 'asc'
+        ? sql`ORDER BY occurred_at ASC`
+        : sql`ORDER BY occurred_at DESC`;
 
   const rows = await coreDb().execute(sql`
     SELECT event_id, occurred_at, event_type, aggregate_type, aggregate_id, actor, payload, before, after, trace_id
@@ -37,7 +61,7 @@ export async function queryAudit(
       ${aggregate_id ? sql`AND aggregate_id = ${aggregate_id}` : sql``}
       ${fromTs ? sql`AND occurred_at >= ${fromTs}::timestamptz` : sql``}
       ${toTs ? sql`AND occurred_at < ${toTs}::timestamptz` : sql``}
-    ORDER BY occurred_at DESC
+    ${orderBy}
     LIMIT ${limit} OFFSET ${offset}
   `);
 

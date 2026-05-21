@@ -10,7 +10,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@hono/node-server": "^1.19.14",
     "@seta/copilot": "workspace:^",
     "@seta/core": "workspace:^",
     "@seta/identity": "workspace:^",
@@ -21,18 +20,19 @@
     "@seta/shared-mailer": "workspace:^",
     "@seta/shared-types": "workspace:^",
     "drizzle-orm": "^0.45.2",
-    "hono": "^4.12.19",
+    "hono": "^4.12.21",
     "pino": "^10.3.1",
     "tsx": "^4.22.3",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@hono/node-server": "^2.0.3",
     "@seta/shared-config": "workspace:^",
     "@seta/shared-testing": "workspace:^",
-    "@types/node": "^20.11.17",
+    "@types/node": "^25.9.1",
     "@types/pg": "^8.20.0",
     "pg": "^8.21.0",
-    "typescript": "^5.8.3",
-    "vitest": "^4.1.6"
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.7"
   }
 }

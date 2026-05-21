@@ -20,6 +20,11 @@ export function registerAdminAuditRoutes(app: Hono<SessionEnv>): void {
     const to = c.req.query('to');
     const limit = Math.min(parseInt(c.req.query('limit') ?? '50', 10), 200);
     const offset = parseInt(c.req.query('offset') ?? '0', 10);
+    const sort_by_raw = c.req.query('sort_by');
+    const sort_dir_raw = c.req.query('sort_dir');
+    const sort_by =
+      sort_by_raw === 'event_type' || sort_by_raw === 'occurred_at' ? sort_by_raw : undefined;
+    const sort_dir = sort_dir_raw === 'asc' || sort_dir_raw === 'desc' ? sort_dir_raw : undefined;
 
     const result = await queryAudit({
       tenant_id: scope.tenant_id,
@@ -29,6 +34,8 @@ export function registerAdminAuditRoutes(app: Hono<SessionEnv>): void {
       to: to || undefined,
       limit,
       offset,
+      sort_by,
+      sort_dir,
     });
 
     return c.json(result);

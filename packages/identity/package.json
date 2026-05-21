@@ -27,12 +27,12 @@
     "@seta/shared-rbac": "workspace:^",
     "@seta/shared-testing": "workspace:^",
     "@seta/shared-types": "workspace:^",
-    "@types/node": "^25.9.0",
+    "@types/node": "^25.9.1",
     "@types/pg": "^8.20.0",
-    "@vitejs/plugin-react": "^6.0.1",
+    "@vitejs/plugin-react": "^6.0.2",
     "drizzle-kit": "^0.31.10",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.6"
+    "vitest": "^4.1.7"
   },
   "dependencies": {
     "@node-rs/argon2": "^2.0.2",

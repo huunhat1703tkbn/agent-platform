@@ -24,11 +24,11 @@
     "@seta/shared-rbac": "workspace:^",
     "@seta/shared-testing": "workspace:^",
     "@seta/shared-types": "workspace:^",
-    "@types/node": "^25.9.0",
+    "@types/node": "^25.9.1",
     "@types/pg": "^8.20.0",
     "drizzle-kit": "^0.31.10",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.6"
+    "vitest": "^4.1.7"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2",

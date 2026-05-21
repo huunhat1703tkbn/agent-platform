@@ -36,16 +36,29 @@
     "@turbo/gen": "^2.9.14",
     "@types/eslint": "^9.6.1",
     "dependency-cruiser": "^17.4.0",
-    "eslint": "^10.3.0",
+    "eslint": "^10.4.0",
     "eslint-plugin-boundaries": "^6.0.2",
     "jiti": "^2.7.0",
-    "lefthook": "^2.1.6",
+    "lefthook": "^2.1.8",
     "turbo": "^2.9.14",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.6"
+    "vitest": "^4.1.7"
   },
   "packageManager": "pnpm@9.0.0",
   "engines": {
     "node": ">=24"
+  },
+  "pnpm": {
+    "overrides": {
+      "@prisma/client": "5.22.0",
+      "kysely": "0.28.17"
+    },
+    "peerDependencyRules": {
+      "allowedVersions": {
+        "@ai-sdk/ui-utils>zod": "4",
+        "@ai-sdk/provider-utils>zod": "4",
+        "@better-auth/core>better-call": "1"
+      }
+    }
   }
 }
