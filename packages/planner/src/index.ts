@@ -21,6 +21,11 @@ export { getGroup } from './backend/domain/get-group.ts';
 export { getPlan } from './backend/domain/get-plan.ts';
 export { getPlanChartData } from './backend/domain/get-plan-chart-data.ts';
 export { getTask } from './backend/domain/get-task.ts';
+export type {
+  GetTaskForEmbeddingInput,
+  TaskForEmbedding,
+} from './backend/domain/get-task-for-embedding.ts';
+export { getTaskForEmbedding } from './backend/domain/get-task-for-embedding.ts';
 export { linkGroupToM365 } from './backend/domain/link-group-to-m365.ts';
 export { listBuckets } from './backend/domain/list-buckets.ts';
 export { listChecklistItems } from './backend/domain/list-checklist-items.ts';
@@ -117,6 +122,13 @@ export type {
 } from './backend/inputs.ts';
 export type { PlannerErrorCode } from './backend/rbac.ts';
 export { PlannerError, requirePermission } from './backend/rbac.ts';
+export type {
+  SearchTasksDeps,
+  SearchTasksInput,
+} from './backend/retrieval/search-tasks.ts';
+export { searchTasks } from './backend/retrieval/search-tasks.ts';
+export type { TaskSourceInput } from './embeddings/source.ts';
+export { buildTaskSource } from './embeddings/source.ts';
 export type { PlannerEvent, PlannerEventActor } from './events/index.ts';
 export {
   PLANNER_PERMISSIONS,

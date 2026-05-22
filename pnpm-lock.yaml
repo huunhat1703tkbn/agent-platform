@@ -55,6 +55,9 @@ importers:
 
   apps/cli:
     dependencies:
+      '@seta/copilot':
+        specifier: workspace:^
+        version: link:../../packages/copilot
       '@seta/core':
         specifier: workspace:^
         version: link:../../packages/core
@@ -358,6 +361,9 @@ importers:
       '@seta/planner':
         specifier: workspace:^
         version: link:../planner
+      '@seta/shared-embeddings':
+        specifier: workspace:^
+        version: link:../shared/embeddings
       ai:
         specifier: ^6.0.188
         version: 6.0.188(zod@4.4.3)
@@ -623,6 +629,12 @@ importers:
       '@opentelemetry/api':
         specifier: ^1.9.1
         version: 1.9.1
+      '@seta/shared-embeddings':
+        specifier: workspace:^
+        version: link:../shared/embeddings
+      '@seta/shared-retrieval':
+        specifier: workspace:^
+        version: link:../shared/retrieval
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(@opentelemetry/api@1.9.1)(@prisma/client@5.22.0)(@types/pg@8.20.0)(better-sqlite3@12.10.0)(kysely@0.28.17)(pg@8.21.0)

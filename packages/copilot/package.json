@@ -8,7 +8,9 @@
     ".": "./src/index.ts",
     "./events": "./src/events/index.ts",
     "./register": "./src/register.ts",
-    "./testing": "./src/testing/fixtures.ts"
+    "./testing": "./src/testing/fixtures.ts",
+    "./testing/embed": "./src/testing/embed.ts",
+    "./backend/embeddings/backfill/backfill-tasks": "./src/backend/embeddings/backfill/backfill-tasks.ts"
   },
   "scripts": {
     "lint": "eslint . --no-error-on-unmatched-pattern",
@@ -38,6 +40,7 @@
     "@mastra/memory": "^1.19.0",
     "@mastra/pg": "^1.11.1",
     "@seta/planner": "workspace:^",
+    "@seta/shared-embeddings": "workspace:^",
     "ai": "^6.0.188",
     "drizzle-orm": "^0.45.2",
     "graphile-worker": "^0.16.6",
