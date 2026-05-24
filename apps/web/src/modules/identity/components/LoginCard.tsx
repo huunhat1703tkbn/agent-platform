@@ -12,7 +12,7 @@ type Step =
 const ERROR_MESSAGES: Record<string, string> = {
   not_pre_provisioned: "We don't have an account for this email. Ask your admin to invite you.",
   tid_mismatch:
-    'This Microsoft account belongs to a different organization. Use the work account your organization set up with Seta.',
+    'This Microsoft account belongs to a different organization. Use the work account your organization set up here.',
   oid_conflict:
     'This account is linked to a different Microsoft login. Ask your admin to sort it out.',
   user_deactivated: 'Your account is inactive. Contact your admin to reactivate it.',
@@ -127,7 +127,6 @@ function LoginShell({ children }: { children: React.ReactNode }) {
     <div className="theme-light relative flex min-h-screen flex-col bg-surface-1 text-ink">
       <header className="flex items-center gap-xs px-lg pt-lg sm:px-xl">
         <SetaMark size={22} />
-        <span className="text-body-sm font-semibold text-ink">Seta</span>
       </header>
 
       <main className="flex flex-1 items-center justify-center px-lg py-xl sm:px-xl">
@@ -140,7 +139,7 @@ function LoginShell({ children }: { children: React.ReactNode }) {
       </main>
 
       <footer className="flex items-center justify-between px-lg py-md text-caption text-ink-subtle sm:px-xl">
-        <span suppressHydrationWarning>© {new Date().getFullYear()} Seta International</span>
+        <span suppressHydrationWarning>© {new Date().getFullYear()}</span>
         <div className="flex items-center gap-md">
           <a
             href="https://seta-international.vn/privacy"
@@ -176,7 +175,7 @@ function EmailStep({
 }) {
   return (
     <>
-      <h1 className="text-center text-card-title font-semibold text-ink">Sign in to Seta</h1>
+      <h1 className="text-center text-card-title font-semibold text-ink">Sign in</h1>
       <p className="mt-1 mb-md text-center text-body-sm text-ink-muted">
         Enter your work email to continue.
       </p>

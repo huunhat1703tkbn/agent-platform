@@ -212,13 +212,14 @@ export function TaskDetailAssigneesCard({ task, planId, isLinkedToM365 = false }
                         >
                           <Info className="size-3" />
                           <span>
-                            {hiddenCount} user{hiddenCount === 1 ? '' : 's'} hidden — not in M365
+                            {hiddenCount} {hiddenCount === 1 ? 'person' : 'people'} hidden — not in
+                            Microsoft 365
                           </span>
                         </div>
                       </TooltipTrigger>
                       <TooltipContent>
-                        Users without a Microsoft Entra identity can&apos;t be assigned to tasks on
-                        a linked plan.
+                        On linked plans, you can only assign people who have a Microsoft work
+                        account.
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>

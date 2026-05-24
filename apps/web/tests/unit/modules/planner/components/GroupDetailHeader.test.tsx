@@ -99,10 +99,12 @@ const baseProps = {
 };
 
 describe('GroupDetailHeader', () => {
-  it('renders the back link, breadcrumb, tile, and title', async () => {
+  it('renders the breadcrumb, tile, and title', async () => {
     renderInRouter(<GroupDetailHeader {...baseProps} />);
-    expect(await screen.findByRole('link', { name: /Back to Groups/i })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Engineering' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Engineering' })).toBeInTheDocument();
+    const nav = screen.getByRole('navigation', { name: 'Breadcrumb' });
+    expect(nav).toHaveTextContent('Planner');
+    expect(nav).toHaveTextContent('Groups');
   });
 
   it('renders Private visibility pill', async () => {
@@ -160,18 +162,12 @@ describe('GroupDetailHeader', () => {
     expect(screen.getByText('Platform work')).toBeInTheDocument();
   });
 
-  it('shows em-dash when description is null', async () => {
+  it('omits the description when null', async () => {
     renderInRouter(
       <GroupDetailHeader {...baseProps} group={{ ...baseGroup, description: null }} />,
     );
     await screen.findByRole('heading', { name: 'Engineering' });
-    expect(screen.getByText('—')).toBeInTheDocument();
-  });
-
-  it('shows the formatted creation date', async () => {
-    renderInRouter(<GroupDetailHeader {...baseProps} />);
-    await screen.findByRole('heading', { name: 'Engineering' });
-    expect(screen.getByText(/Created Mar 2026/)).toBeInTheDocument();
+    expect(screen.queryByText('Platform work')).not.toBeInTheDocument();
   });
 
   it('does not show SyncBadge when external_source is native', async () => {

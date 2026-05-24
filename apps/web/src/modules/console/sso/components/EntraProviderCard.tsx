@@ -173,8 +173,8 @@ export function EntraProviderCard({ row, onChanged }: EntraProviderCardProps) {
                 Connect your Microsoft tenant so your team can sign in with their work account.
               </p>
               <p className="m-0 mt-1 text-caption text-ink-subtle">
-                Invite people first — Microsoft sign-in only works for users who already have a Seta
-                account.
+                Invite people first — Microsoft sign-in only works for users who already have an
+                account here.
               </p>
             </div>
             <ConnectEntraDialog onConnected={onChanged} />

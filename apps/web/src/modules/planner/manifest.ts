@@ -27,7 +27,7 @@ export const plannerNavManifest: NavManifest = {
       icon: Search,
       label: 'Search',
       disabled: true,
-      disabledHint: 'Task search ships with B5',
+      disabledHint: 'Search is coming soon',
     },
     { id: 'planner.trash', icon: Archive, label: 'Trash', to: '/planner/trash' },
   ],

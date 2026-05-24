@@ -148,7 +148,7 @@ export function TaskDetailLabelsCard({ task, planId, isLinkedToM365 = false }: P
 }
 
 const LOCAL_ONLY_TOOLTIP =
-  'Add a category slot in Plan Settings to sync this label to M365 Planner.';
+  'Assign this label to a category slot in Plan settings to send it to Microsoft Planner.';
 
 const head: CSSProperties = { marginBottom: 8 };
 const chips: CSSProperties = {

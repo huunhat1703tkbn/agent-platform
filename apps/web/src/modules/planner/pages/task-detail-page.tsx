@@ -65,7 +65,7 @@ export function TaskDetailPage({ planId, taskId }: Props) {
   const isForbidden = taskErr instanceof PlannerClientError && taskErr.status === 403;
   useEffect(() => {
     if (!isForbidden) return;
-    toast.error('You no longer have access to this task.');
+    toast.error("You don't have access to this task anymore.");
     void navigate({ to: '/planner/groups' });
   }, [isForbidden, navigate]);
 
@@ -106,10 +106,10 @@ export function TaskDetailPage({ planId, taskId }: Props) {
         updatedAt={task.updated_at}
         creatorName={creatorName}
         onBack={() => void navigate({ to: '/planner/plans/$planId', params: { planId } })}
-        onAskCopilot={() => toast('Copilot integration coming soon.')}
+        onAskCopilot={() => toast('Copilot is coming soon.')}
         onCopyLink={() => {
           void navigator.clipboard.writeText(window.location.href);
-          toast('Link copied to clipboard.');
+          toast('Link copied.');
         }}
         onPrevious={() => prevTaskId && goToTask(prevTaskId)}
         onNext={() => nextTaskId && goToTask(nextTaskId)}

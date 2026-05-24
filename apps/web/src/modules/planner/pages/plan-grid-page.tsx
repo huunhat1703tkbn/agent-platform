@@ -273,7 +273,7 @@ export function PlanGridPage({
           data-testid="plan-sync-error-banner"
         >
           <div className="font-medium">
-            Sync failed: {PLANNER_403_LIMIT_MESSAGES[plan.last_error] ?? plan.last_error}
+            Sync didn&apos;t work: {PLANNER_403_LIMIT_MESSAGES[plan.last_error] ?? plan.last_error}
           </div>
           <button
             type="button"
@@ -281,7 +281,7 @@ export function PlanGridPage({
             onClick={() => refreshSync.mutate()}
             disabled={refreshSync.isPending}
           >
-            Retry sync
+            Try sync again
           </button>
         </div>
       )}
@@ -290,21 +290,21 @@ export function PlanGridPage({
           className="mx-7 mt-3 rounded border border-semantic-warning bg-semantic-warning-tint p-3 text-body-sm"
           data-testid="plan-sync-conflict-banner"
         >
-          <div className="font-medium">Sync conflicts need resolution</div>
+          <div className="font-medium">A few changes clashed — pick which version to keep</div>
           <button
             type="button"
             className="mt-2 text-primary underline"
             onClick={() => setConflictDialogOpen(true)}
           >
-            Resolve now
+            Review changes
           </button>
         </div>
       )}
       {plan.sync_status === 'pulling' && tasks.length === 0 ? (
         <div role="status" data-testid="plan-sync-pulling-empty">
           <EmptyState
-            title="Syncing from M365 Planner…"
-            description="This may take a minute for large plans."
+            title="Bringing in your Microsoft Planner tasks…"
+            description="This can take a minute for large plans."
           />
         </div>
       ) : (
