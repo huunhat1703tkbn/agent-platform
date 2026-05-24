@@ -5,6 +5,7 @@ export {
   type AuditSortDir,
   queryAudit,
 } from './backend/audit.ts';
+export { captureException, registerErrorCapture } from './composition/error-capture.ts';
 export { buildHonoApp } from './composition/hono-app.ts';
 export {
   type AgentSpec,
@@ -17,6 +18,7 @@ export {
   type StreamHubBuilder,
   type StreamHubHandle,
 } from './composition/registry.ts';
+export { requestIdMiddleware, requestIdStorage } from './composition/request-id.ts';
 export type { OutgoingEmailStatus, TransportKind } from './db/schema/index.ts';
 export {
   createSessionMiddleware,
