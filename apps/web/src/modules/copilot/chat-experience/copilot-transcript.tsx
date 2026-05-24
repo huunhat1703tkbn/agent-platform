@@ -17,6 +17,10 @@ interface PartProps {
 }
 
 function TextPart({ text, status }: PartProps) {
+  // While the assistant is still queueing the first token, the part exists with
+  // empty text; rendering anything here would stack a stray cursor above the
+  // ThinkingIndicator that the transcript shows for empty turns.
+  if (text.length === 0) return null;
   return (
     <div className="relative">
       <ChatMarkdown text={text} />

@@ -217,14 +217,25 @@ function CopilotRuntimeHost({ children }: { children: React.ReactNode }) {
     location.pathname,
   ]);
 
+  // Fetch history at this level so we can defer mounting the runtime until the
+  // messages are in hand. `useChatRuntime` snapshots `initialMessages` only on
+  // first render, so without this gate clicking a thread before history loads
+  // seeds the runtime with [] and the conversation never appears.
+  const { data: history, isLoading } = useThreadMessages(selection.threadId);
+  const historyReady = !selection.threadId || (!isLoading && Boolean(history));
+  const initialMessages: UIMessage[] = selection.threadId ? (history?.messages ?? []) : [];
+
   return (
     <CopilotRuntimeHostInner
-      // Remount whenever the thread changes OR an HITL approval resolves —
-      // matches today's `key` on ChatPane so initialMessages re-seed the runtime.
-      key={`${selection.threadId ?? 'new'}::${approvalEvent.revision}`}
+      // Remount whenever the thread changes, an HITL approval resolves, OR the
+      // history finishes loading — that last bit guarantees the runtime is
+      // seeded with the real messages instead of an empty array.
+      key={`${selection.threadId ?? 'new'}::${approvalEvent.revision}::${historyReady ? 'ready' : 'pending'}`}
       threadId={selection.threadId}
       agentName={selection.agentName}
       modelKey={selection.modelKey}
+      initialMessages={initialMessages}
+      historyLoading={!historyReady}
       pageContextRef={pageContextRef}
     >
       {children}
@@ -236,21 +247,22 @@ function CopilotRuntimeHostInner({
   threadId,
   agentName,
   modelKey,
+  initialMessages,
+  historyLoading,
   pageContextRef,
   children,
 }: {
   threadId: string | undefined;
   agentName: string;
   modelKey: string;
+  initialMessages: UIMessage[];
+  historyLoading: boolean;
   pageContextRef: React.MutableRefObject<{
     ctx: PageContext | null;
     suppressedFor: string | null;
   }>;
   children: React.ReactNode;
 }) {
-  const { data: history, isLoading } = useThreadMessages(threadId);
-  const initialMessages: UIMessage[] = threadId ? (history?.messages ?? []) : [];
-  const historyLoading = Boolean(threadId) && isLoading && !history;
   const runtime = useCopilotRuntime({
     agentName,
     threadId,
