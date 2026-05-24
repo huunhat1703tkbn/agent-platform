@@ -1,525 +1,345 @@
 # Copilot agent architecture
 
-The copilot is a hierarchical supervisor over module-owned specialists and workflows. Every user request enters one top-level Mastra `Agent`, gets routed to a **domain supervisor**, which delegates to a **module specialist** or invokes a **deterministic workflow**. Writes are gated by HITL approval cards. Modules contribute specialists, cross-module reads, and workflows through a typed registry — no hand-edited supervisor wiring.
+*Author: Copilot platform team · Audience: engineering leadership*
 
-This document is the single source of truth for the copilot system's shape. When this doc and the code disagree, the doc is the bug — fix it here.
-
-For repo-wide architecture, see [`architecture.md`](architecture.md). This file expands its [§9 Agent system](architecture.md#9-agent-system-copilot) into the operational detail you need to build, change, or debug the agent layer.
-
-## Contents
-
-1. [Topology](#1-topology)
-2. [Domains](#2-domains)
-3. [Registry contract — `@seta/copilot-sdk`](#3-registry-contract--setacopilot-sdk)
-4. [Tools — write vs. read vs. cross-module](#4-tools--write-vs-read-vs-cross-module)
-5. [Workflows](#5-workflows)
-6. [HITL — approval card contract](#6-hitl--approval-card-contract)
-7. [Retrieval — vectors via Mastra primitives](#7-retrieval--vectors-via-mastra-primitives)
-8. [Runtime safety, observability, audit](#8-runtime-safety-observability-audit)
-9. [Adding a module](#9-adding-a-module)
-10. [Adding a workflow](#10-adding-a-workflow)
-11. [Operational rules](#11-operational-rules)
-12. [References](#12-references)
+This document explains how the Seta copilot works — the system that lets a user say "find someone to take this on" and get a ranked shortlist with one click to assign, or say "create a task for fixing the Safari login" and get caught when that task already exists. It is the implementation reference for the agent layer; for repo-wide architecture, see [`architecture.md`](architecture.md).
 
 ---
 
-## 1. Topology
+## The problem we're solving
 
-A request travels through at most three Mastra agents:
+Knowledge-work platforms reach a point where the friction is no longer *capturing* work, it is *moving* work — answering "is this already tracked?", "who should own this?", "what's on my plate this week?". These are the questions a good chief of staff answers all day. They are also the questions the platform already has every signal to answer: task graph, skill profiles, availability, history, capacity.
 
-```
-                        ┌────────────────────────────────┐
-                        │  Top Supervisor (~4 domains)   │
-                        │  Work · People · Self · Meta   │
-                        └──────────────┬─────────────────┘
-                                       │ delegate
-              ┌────────────────────────┼────────────────────────┐
-              ▼                        ▼                        ▼
-    ┌──────────────────┐   ┌────────────────────┐   ┌────────────────────┐
-    │ Work Supervisor  │   │ People Supervisor  │   │  Self Supervisor   │
-    │                  │   │                    │   │                    │
-    │ sub-agents:      │   │ sub-agents:        │   │ sub-agents:        │
-    │  • planner       │   │  • identity        │   │  • self            │
-    │  • (timesheet…)  │   │  • (hr…)           │   │                    │
-    │                  │   │                    │   │ Meta Supervisor    │
-    │ workflows:       │   │ workflows:         │   │  intro/capability  │
-    │  • dedupOnCreate │   │  (future)          │   │  read-only         │
-    │  • assignBySkill │   │                    │   │                    │
-    └──────────────────┘   └────────────────────┘   └────────────────────┘
-                                       │ delegate
-                                       ▼
-                            ┌────────────────────┐
-                            │  Module specialist │
-                            │  (e.g. planner)    │
-                            │                    │
-                            │ own tools          │
-                            │ + cross-module     │
-                            │   read tools       │
-                            └────────────────────┘
-```
+An AI assistant is the natural surface for those questions. But to feel like a chief of staff and not a chatbot, it has to do three things that most LLM products skip:
 
-**Three load-bearing rules:**
+1. **Route confidently across the whole platform.** A real question often spans modules: planner state, identity skills, calendar capacity. The assistant cannot say "I only handle planner queries."
+2. **Stay deterministic where the user cares.** Suggesting an assignee is fine to be probabilistic; actually assigning the ticket is not. Every state change is gated by an approval card that shows the user exactly what is about to happen and why.
+3. **Stay maintainable as the platform grows.** Six months from now the platform will have a timesheet module, an HR module, a finance module. Each of those will want to expose its own data and actions to the assistant. The system has to absorb them without anyone rewriting the assistant.
 
-1. **Module specialists own their writes, share reads.** Writes (`requireApproval: true`) live on the owning module's specialist. Read tools that other specialists need are published to a shared cross-module read registry (RBAC-filtered, RBAC re-checked at the callee).
-2. **Multi-step deterministic flows are Mastra workflows, not agent reasoning.** Dedup, skill-match, capacity-check, etc., are workflows registered on the relevant domain supervisor via `workflows: {...}`.
-3. **Module-owned registration.** `@seta/copilot-sdk` exposes `registerSpecialist`, `registerCrossModuleReadTool`, `registerWorkflow`. Adding a module means dropping these calls in its `agent-tools/register.ts`. Top-supervisor and domain-supervisor prompts are **generated from the registry** — never hand-edited.
-
-**Why 2-level, not flat:** a single supervisor over N specialists scales to N ≈ 8–10 before the routing prompt bloats and routing accuracy degrades. The hierarchy keeps each level's option set bounded as new modules (timesheet, pmo, finance, hr, …) land.
-
-**Why specialists hold cross-module reads:** a planner question that needs timesheet capacity + identity skills should not require the supervisor to bounce between three specialists. One delegation hop, then the specialist composes reads locally.
+The architecture below is shaped around those three requirements.
 
 ---
 
-## 2. Domains
+## How a user experiences it
 
-The top supervisor's universe. Each domain is registered indirectly: when a module's `register.ts` calls `registerSpecialist({ domain, ... })`, that domain appears in the supervisor tree at next boot.
+A planner user types "*who should take on the OAuth redirect task?*" into the chat panel. Within a few seconds an approval card appears: three suggested teammates, each with skills, current task load, and remaining hours this week. The user clicks "Assign to Carol". The card collapses, the ticket updates, an audit row is written, and the assistant confirms in one line.
 
-| Domain | Owns | Currently live |
-|---|---|---|
-| **Work** | planner, pmo, timesheet, milestones, deliverables | ✅ planner |
-| **People** | identity, hr, org-chart, roles, permissions | ✅ identity |
-| **Self** | current user's profile, prefs, notifications | ✅ self |
-| **Meta** | copilot intro, system capability listing, tenant config | ✅ meta (read-only) |
-| **Knowledge** | RAG over wiki/docs (deferred) | ⬜ |
-| **Finance** | invoicing, budgets, expenses (deferred) | ⬜ |
+A different user clicks "+ New task" and types a title. Before the task lands, the assistant asks: *"This looks similar to #142 'Safari login broken after OAuth' — comment there, create a related task, or proceed anyway?"* The user picks "Comment there", a comment lands on the existing ticket, and the team's noise level stays low.
 
-**Mapping is declared by the module**, not centralized:
+Both interactions share the same shape: the assistant *proposes*, the user *decides*, the platform *records*. That shape is the contract we promise. The rest of this document explains how we honor it.
 
-```ts
-// packages/planner/src/backend/agent-tools/register.ts
-CopilotRegistry.registerSpecialist({
-  domain: 'work',
-  id: 'planner',
-  description: 'Manages tasks, buckets, plans, and assignments',
-  instructions: () => '...',
-  tools: { /* planner's tools */ },
-});
+---
+
+## The shape of the system
+
+```mermaid
+graph TD
+    User[User chat<br/>POST /api/copilot/stream]
+    Top["<b>Top Supervisor</b><br/>routes by domain"]
+
+    Work["<b>Work Supervisor</b>"]
+    People["<b>People Supervisor</b>"]
+    Self["<b>Self Supervisor</b>"]
+    Meta["<b>Meta Supervisor</b>"]
+
+    Planner["<b>planner specialist</b>"]
+    Timesheet["timesheet specialist<br/><i>(future)</i>"]
+    Identity["<b>identity specialist</b>"]
+    HR["hr specialist<br/><i>(future)</i>"]
+    SelfSpec["<b>self specialist</b>"]
+    MetaSpec["<b>meta specialist</b>"]
+
+    DedupWF["<b>dedupOnCreate</b><br/>workflow"]
+    AssignWF["<b>assignBySkill</b><br/>workflow"]
+
+    User --> Top
+    Top --> Work
+    Top --> People
+    Top --> Self
+    Top --> Meta
+
+    Work --> Planner
+    Work -.future.-> Timesheet
+    Work --> DedupWF
+    Work --> AssignWF
+
+    People --> Identity
+    People -.future.-> HR
+    Self --> SelfSpec
+    Meta --> MetaSpec
+
+    classDef live fill:#0047FF,color:#fff,stroke:#003;
+    classDef future fill:#eee,color:#666,stroke:#aaa,stroke-dasharray: 4 2;
+    classDef wf fill:#FFC107,color:#000,stroke:#aa7;
+    class Top,Work,People,Self,Meta,Planner,Identity,SelfSpec,MetaSpec live;
+    class Timesheet,HR future;
+    class DedupWF,AssignWF wf;
 ```
 
-Adding a `finance` module later → top-supervisor's routing prompt gains a `Finance` line at next boot, no other code change.
+There are three layers, no more.
+
+**The Top Supervisor** is a router. Its only job is to pick a *domain* — Work, People, Self, or Meta — based on what the user is asking about. It is intentionally narrow: it never reads data, never makes decisions, never executes tools itself. We chose this design because routing accuracy collapses once a single supervisor is asked to know about more than about ten things. With a top-level domain layer, the Top Supervisor's universe stays small even as the product grows to dozens of modules.
+
+**Domain Supervisors** are coordinators within a domain. Work knows about planner, pmo, timesheet. People knows about identity, hr. Each domain supervisor holds two kinds of children: *specialists* (which act on a single module) and *workflows* (deterministic multi-step procedures we will describe below). When a question is single-module ("show me task #142"), the domain supervisor delegates to a specialist. When it is a known multi-step job ("create task X" — which needs deduplication, which needs vector search, which needs HITL), it invokes a workflow.
+
+**Module Specialists** are where module-specific intelligence lives. The planner specialist knows the planner's tools. The identity specialist knows identity's. Critically, specialists can also *read across modules* — the planner specialist can ask "how many hours does this user have free this week?" without bouncing back up to its supervisor — because cross-module reads are published into a shared registry that any specialist may consume. State *changes* never cross that line: only the owning module's specialist can write to its own data.
+
+This separation — writes are private, reads are shared — is the design choice that lets a chat answer about "should I take this on?" satisfy a single delegation hop instead of three, while preserving clean module ownership and an unambiguous audit trail.
 
 ---
 
-## 3. Registry contract — `@seta/copilot-sdk`
+## Why we build on Mastra
 
-The SDK is the only allowed handoff between modules and the copilot engine. Modules **never** import the engine; the engine **never** imports modules. Both speak to the registry.
+We did not write our own agent runtime. The space — agent hierarchies, tool calling, streaming, suspension/resume for human-in-the-loop, workflow orchestration, vector retrieval, memory persistence — is well-explored, and writing it from scratch would be a year of work for no product differentiation.
 
-### 3.1 Primitives
+We chose [Mastra](https://mastra.ai) because it gives us all of the above as composable TypeScript primitives, with an unusually clean surface for the two things that matter most to us: **hierarchical supervisors with native delegation**, and **first-class human-in-the-loop**. Mastra exposes both as core constructs, not afterthoughts.
 
-```ts
-// 1. Specialist — a Mastra sub-agent attached to a domain
-CopilotRegistry.registerSpecialist({
-  domain: 'work' | 'people' | 'self' | 'meta',
-  id: 'planner',
-  description: 'Manages tasks, buckets, plans, and assignments',
-  instructions: ({ runtimeContext }) => '...',
-  model: '__GATEWAY_OPENAI_MODEL_MINI__',
-  tools: { plannerListMyTasks, plannerAssignTask, /* ...own tools */ },
-  workflows: { /* optional: workflows owned by this specialist */ },
-})
+Our job is to bring the business: which modules exist, what tools each one exposes, which deterministic flows are worth promoting from "agent reasoning" to "workflow", and how the approval cards should look. We *do not* extend Mastra; we configure it.
 
-// 2. Cross-module read tool — a read another specialist may consume
-CopilotRegistry.registerCrossModuleReadTool({
-  id: 'timesheet_getMyCapacityThisWeek',
-  description: 'Returns hours-available this week for the calling user',
-  inputSchema: z.object({}),
-  outputSchema: z.object({ hoursAvailable: z.number(), hoursBooked: z.number() }),
-  rbac: 'timesheet:read:self',
-  availableTo: 'all-specialists', // or ['planner', 'pmo']
-  execute: async ({ session }) => { /* ... */ },
-})
+The map below shows where our code ends and Mastra begins.
 
-// 3. Workflow — a Mastra workflow registered as a tool on a domain supervisor
-CopilotRegistry.registerWorkflow({
-  domain: 'work',
-  id: 'dedupOnCreate',
-  description: 'Vector-search similar tasks before creating; HITL confirms',
-  inputSchema: TaskDraftSchema,
-  outputSchema: DedupOutputSchema,
-  workflow: dedupOnCreateWorkflow,
-  hitlSteps: ['confirmNotDuplicate'],
-})
+```mermaid
+graph LR
+    SDK["@seta/copilot-sdk<br/>(registry contract)"]
+    Engine["@seta/copilot<br/>(supervisor builder)"]
+    Modules["packages/&lt;module&gt;<br/>(planner, identity, …)"]
 
-// 4. Standard write/read tool — unchanged pattern
-defineCopilotTool({ id, name, description, input, output, rbac, needsApproval, execute })
+    subgraph "Mastra runtime"
+        MCore["@mastra/core<br/>Agent · createTool · createWorkflow"]
+        MRag["@mastra/rag<br/>createVectorQueryTool"]
+        MPg["@mastra/pg<br/>PgVector · PostgresStore"]
+        MMem["@mastra/memory<br/>Memory"]
+    end
+
+    Modules -->|register specialists,<br/>workflows, cross-module reads| SDK
+    Engine -->|reads registry,<br/>builds supervisor tree| SDK
+    Engine -->|constructs Mastra agents| MCore
+    Engine -->|configures conversation memory| MMem
+    Modules -->|defines workflows| MCore
+    Modules -->|defines retrieval tools| MRag
+    MRag -->|vector backend| MPg
+    MMem -->|persistence| MPg
+
+    classDef ours fill:#0047FF,color:#fff;
+    classDef mastra fill:#FFC107,color:#000;
+    class SDK,Engine,Modules ours;
+    class MCore,MRag,MPg,MMem mastra;
 ```
 
-### 3.2 Lifecycle
+A few things to notice about this picture.
 
-```
-app boot
-   │
-   ├─► import "@seta/planner/agent-tools/register"    ← side-effect: register*()
-   ├─► import "@seta/identity/agent-tools/register"   ← side-effect
-   ├─► import "./agent-tools/register-meta"           ← side-effect
-   │
-   └─► initCopilotRegistry()  ─►  CopilotRegistry.freeze()
-                                          │
-              first request ─►  buildSupervisorTree()  ─►  cached Agent
-                                          │
-                                          └─►  uses snapshot of frozen registry
-```
+First, **modules never import the agent engine** and the engine never imports modules. They communicate exclusively through the registry. This is the same modular-monolith discipline that runs through the rest of the codebase, applied to the agent layer.
 
-The registry is **append-only at boot, frozen at startup, read-only at request time**. Calling `register*` after freeze throws `RegistryFrozenError`. Calling `snapshot()` before freeze throws `RegistryNotFrozenError`. Boot-time order is enforced by:
-- Eslint rule: `register*` only at module top-level (no dynamic calls).
-- depcruise rule: modules import only via `@seta/copilot-sdk`, never each other's tools.
+Second, **the registry is the seam where new modules plug in**. Adding the timesheet module someday means writing one registration file in the timesheet package — no edits to copilot, no edits to other modules. The supervisor tree rebuilds on the next process restart with timesheet's specialist, tools, and any cross-module reads it chose to publish.
 
-### 3.3 `defineCopilotTool` is a wrapper over `@mastra/core/tools.createTool`
+Third, **the four Mastra packages each do one thing**. Core provides agents, tools, and workflows. RAG provides vector retrieval with built-in filtering and reranking. The Postgres adapter provides both the vector store and the persistence layer for conversation memory and suspended workflow runs. Memory provides the thread-and-message abstraction. We use them as-shipped; we do not vendor or patch them.
 
-```ts
-// sdks/copilot/src/define-copilot-tool.ts
-export function defineCopilotTool(spec: CopilotToolSpec) {
-  return createTool({
-    id: spec.id,
-    description: spec.description,
-    inputSchema: spec.input,
-    outputSchema: spec.output,
-    requireApproval: spec.needsApproval ?? false,  // Mastra-native key
-    execute: async (ctx) => {
-      await enforceRbac(spec.rbac, ctx.runtimeContext);
-      const result = await spec.execute(ctx);
-      await audit.write({ tool: spec.id, /* ... */ });
-      return result;
-    },
-  });
-}
+---
+
+## How a request flows
+
+Two sequence diagrams are enough to understand the runtime. The first shows the everyday case — a read-only question. The second shows the case that defines the system's character — a write with human approval.
+
+### A read-only question
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant UI as Web UI
+    participant Route as Copilot HTTP route
+    participant Top as Top Supervisor
+    participant Dom as Work Supervisor
+    participant Spec as planner specialist
+    participant Tool as planner_getTask
+    participant DB as Postgres
+
+    UI->>Route: "show task #142"
+    Route->>Top: open stream
+    Top->>Dom: delegate (domain = work)
+    Dom->>Spec: delegate (specialist = planner)
+    Spec->>Tool: call (read-only)
+    Tool->>DB: SELECT
+    DB-->>Tool: row
+    Tool-->>Spec: result
+    Spec-->>Top: synthesized answer
+    Top-->>UI: streaming text
 ```
 
-This means approval propagates through the supervisor chain natively via Mastra's `tool-call-approval` stream event. There is **no custom approval bus**.
+The request travels through three agents, the deepest specialist runs one tool, and the answer streams back. There is no approval, no suspension, no workflow — reads are cheap and direct.
 
-### 3.4 Hard invariants (CI-enforced)
+### A write with human approval
 
-| Invariant | Enforcement |
-|---|---|
-| Write tool sets `needsApproval: true` | `pnpm lint:rbac-coverage` (rule extension) |
-| Specialist has non-empty `description` | runtime throw at `registerSpecialist` |
-| Cross-module read tool has non-empty `rbac` | runtime throw at `registerCrossModuleReadTool` |
-| Module imports another module's tool function | depcruise rule `no-direct-cross-module-tool-import` |
-| Tool id matches `<module>_<action>` | `defineCopilotTool` constructor check |
-| `register*` only at module top-level | eslint rule |
+```mermaid
+sequenceDiagram
+    autonumber
+    participant UI as Web UI
+    participant Route as Copilot HTTP route
+    participant Top as Top Supervisor
+    participant Plan as planner specialist
+    participant WF as dedupOnCreate workflow
+    participant Card as Approval card
+    participant DB as Postgres
 
----
-
-## 4. Tools — write vs. read vs. cross-module
-
-Three tool categories, three behaviors:
-
-| Category | Defined via | HITL? | Visible to |
-|---|---|---|---|
-| **Module write** | `defineCopilotTool({ needsApproval: true })` | yes | the owning specialist only |
-| **Module read** | `defineCopilotTool()` | no | the owning specialist only |
-| **Cross-module read** | `registerCrossModuleReadTool({ rbac, availableTo })` | no | every specialist allowed by `availableTo`, RBAC re-checked per call |
-
-**Why the asymmetry on writes**: every state-changing operation belongs to one module. If two specialists could both call `planner_assignTask`, the audit trail and ownership story breaks. Reads are cheap and cross-module composition is the common case ("planner specialist needs timesheet capacity"), so reads are shared.
-
-**Naming**: `<module>_<action>`. Examples: `planner_assignTask`, `identity_whoAmI`, `timesheet_getCapacityThisWeek`.
-
-**RBAC**: every tool declares an `rbac` string. The wrapper calls `enforceRbac` before `execute`. The session in `requestContext` carries `effective_permissions: ReadonlySet<string>` populated by the session middleware (see `architecture.md` §8).
-
----
-
-## 5. Workflows
-
-Workflows are deterministic, replayable, auditable orchestrations registered with `registerWorkflow`. Use a workflow when:
-
-- The job has **3+ ordered steps**.
-- At least one step is a side-effect (DB write, external call).
-- You want **HITL at a specific step**, not at the top.
-- You want to **A/B tune** thresholds/weights without changing code.
-- You want to **replay** a past run for debugging or eval.
-
-Use a tool (and let the agent reason its way through) when the job is one operation or the ordering is genuinely free-form.
-
-### 5.1 Anatomy
-
-```ts
-// packages/<module>/src/backend/workflows/<name>/spec.ts
-export const myWorkflow = createWorkflow({
-  id: 'planner.dedup-on-create',
-  inputSchema, outputSchema,
-})
-  .then({ id: 'normalize', execute: normalizeStep })
-  .then({ id: 'fetchCandidates', execute: searchStep })
-  .then({ id: 'classify', execute: classifyStep })
-  .then({ id: 'confirmNotDuplicate', execute: hitlStep })   // requireApproval inside
-  .then({ id: 'apply', execute: applyStep })
-  .commit();
-
-export const myWorkflowSpec = {
-  domain: 'work',
-  id: 'dedupOnCreate',
-  description: 'Vector-search similar tasks before creating; HITL confirms',
-  inputSchema, outputSchema,
-  workflow: myWorkflow,
-  hitlSteps: ['confirmNotDuplicate'],
-};
+    UI->>Route: 'Create task: "Fix Safari OAuth login redirect"'
+    Route->>Top: open stream
+    Top->>Plan: delegate via Work Supervisor
+    Plan->>WF: invoke (write tools never run direct)
+    WF->>WF: normalize · embed draft
+    WF->>DB: vector search + relational filter
+    DB-->>WF: candidate duplicates
+    WF->>WF: classify by threshold
+    Note over WF: result = "likely duplicate"
+    WF-->>Route: suspend · emit approval card
+    Route-->>UI: render card (3 candidates · 4 actions)
+    UI->>Route: user picks "Comment on #142"
+    Route->>Top: resume with chosen action
+    Top->>WF: continue from suspension
+    WF->>DB: INSERT comment · emit domain event
+    WF-->>UI: "Linked as comment on #142"
 ```
 
-### 5.2 Live examples
+The shape worth noting: the write tool *never executes silently*. The workflow runs the deterministic prologue (normalize, embed, search, classify), then **suspends** the moment it has enough information to ask the user. The suspension is not a custom mechanism — it is Mastra's native approval primitive, which we surface as a typed card in the UI. When the user acts, the run resumes from exactly where it paused.
 
-| Workflow | Domain | Trigger | HITL step | Output |
-|---|---|---|---|---|
-| `dedupOnCreate` | work | every copilot-driven task creation | `confirmNotDuplicate` | `created` / `linked` (comment/related/sub-task) / `cancelled` |
-| `assignBySkill` | work | chat "find someone for #142", in-chat post-create push, planner UI button | `suggestAssignee` | `assigned` / `left-unassigned` / `declined` |
-
-### 5.3 Persistence
-
-Workflow runs persist in `copilot.workflow_runs` (`run_id`, `workflow_id`, `tenant_id`, `started_by`, `started_via`, `input_summary`, `status`, `suspend_reason`, timestamps). Suspended runs (waiting on HITL) survive process restarts. TTL: `copilot.tenant_settings.approval_ttl_hours` (default 72h, then auto-decline).
+This is what we mean by "the agent proposes, the user decides, the platform records." Every write in the system follows this shape.
 
 ---
 
-## 6. HITL — approval card contract
+## The two flagship workflows
 
-Every write tool sets `requireApproval: true`. No inline confirmations. No out-of-band approval surfaces (no Slack, no email — in-app only in v1). The surface is the assistant-ui Interactable card rendered from the shared `ApprovalCard` schema.
+Workflows are how we keep multi-step operations deterministic and auditable. We use them in two cases that define the assistant's value: catching duplicate tasks at creation time, and suggesting an assignee for a task that needs one.
 
-### 6.1 Schema (`sdks/copilot/src/hitl/card.ts`)
+### Catching duplicates as they appear
 
-```ts
-type ApprovalCard = {
-  toolCallId: string         // for resume
-  intent: string             // human-readable "Assign task #142 to Alice"
-  riskBadge: 'write' | 'destructive' | 'external'
-  summary: string            // one-liner
-  details: ApprovalDetailBlock[]   // typed blocks the UI knows how to render
-  primary:   { label: string; argsPatch?: object }            // → approveToolCall
-  alternates: Array<{ label: string; argsPatch: object }>     // → approve with modifiedArgs
-  decline:   { label: string }                                // → declineToolCall
-  meta: { tenantId, userId, agentPath, toolId, ts }
-}
+Duplicates are the silent tax on any work-tracking system. Three engineers file three tickets about the same broken Safari login over a week; the team discovers it later when reviewing the backlog, by which point three people have done the same triage three times. The cost is real but invisible.
 
-type ApprovalDetailBlock =
-  | { kind: 'text'; body: string }
-  | { kind: 'kvTable'; rows: Array<{ k: string; v: string }> }
-  | { kind: 'candidateList'; items: CandidateRow[] }   // used by dedup + assignment
-  | { kind: 'diff'; before: unknown; after: unknown }
-  | { kind: 'confirmationChecklist'; items: string[] }
+The workflow does the obvious thing: every time a task is about to be created through the copilot, we run a semantic search against the tenant's recent tasks. If the new title and description are close to an existing one, we surface the matches with a card that lets the user comment on the existing task, file as related, file as a sub-task, or proceed anyway. If nothing close exists, we create directly and the user never sees a card.
+
+The two judgments — "close enough to matter" and "close enough to definitely be a duplicate" — are tunable per tenant. A consulting firm with many similar-but-distinct client tickets will want looser thresholds than a product team where duplicates are usually true duplicates. We do not hardcode them. Adjusting them is a database update, not a deploy.
+
+Batch imports (CSV, MS Planner sync) run the same logic in a log-only mode: no card, just a metric the team can review. We do not want a thousand approval cards to drop on a user the first time they import.
+
+### Suggesting an assignee
+
+Assignment is where the platform's data pays for itself. Every signal needed to pick a good assignee is already there: skill tags on the user profile, current task load, this week's free hours, timezone overlap with the deadline.
+
+When the workflow fires — whether from a chat question, automatically after a task is created without an assignee, or from a "Suggest assignee" button on the planner page — it does five things in order. It loads the task. It builds a candidate pool from two parallel sources: a fast exact-skill-overlap query against the user table, and a fuzzy semantic match against user-profile embeddings. The two sets are merged on user id, so a candidate found by both signals gets credit for both. It then enriches each candidate with current task count, free hours this week, and timezone — each fetched through a cross-module read tool, so the workflow has no idea which modules supplied which data. It ranks with a weighted score (the weights are per-tenant tunable), keeps the top five, and surfaces them with a card.
+
+The user assigns with one click, picks an alternate from the card, types in someone else through a typeahead, or declines and leaves the task unassigned. There is no auto-assignment mode. The agent suggests; the user assigns.
+
+The workflow also degrades gracefully as the platform grows. If the timesheet module is not installed in a particular deployment, the capacity column simply shows "?" and the score weights load against the current count alone. If a user has no embedding row yet, the exact-overlap branch still finds them. If the task has no skill tags, the vector branch carries via the description. We did not design these fallbacks as an afterthought — they are how the workflow remains useful in a half-built product.
+
+---
+
+## The human-in-the-loop contract
+
+Every write tool in the system requires approval. There is no inline-confirmation pattern, no "trusted writes," no exceptions for low-risk operations. We made this rule absolute on purpose: the moment one write tool gets to bypass the card, the audit story breaks and the user's mental model breaks with it.
+
+The mechanism is straightforward. A write tool marks itself as requiring approval. Mastra suspends the run at the moment of the call. The suspension event bubbles up through whatever depth of supervisors and workflows it sits inside, and lands in the chat thread as a typed *approval card*. The card has a primary action, zero or more alternates (each of which patches the tool's arguments — this is how "Assign to Bob instead of Alice" works), and a decline option. The user's choice resumes the run with the chosen arguments, or aborts it cleanly.
+
+A small set of card layouts covers every case we have today: a plain text description, a key-value table, a candidate list (used by both dedup and assignment), a before/after diff for edits, and a confirmation checklist for destructive operations. New write tools pick one of these layouts; the rendering is already built.
+
+Approval cards persist. A user can refresh the page, log out, return the next morning, and the pending decision is still there. Approvals have a tenant-configurable time-to-live — by default seventy-two hours — after which they auto-decline with an audit row. We did this because operational reality includes Friday-afternoon questions that get answered Monday morning.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Executing: user message arrives
+    Executing --> Suspended: write tool reached
+    Suspended --> Suspended: card visible to user<br/>state persisted
+    Suspended --> Resuming: user approves (optionally with override)
+    Suspended --> Declined: user declines
+    Suspended --> Expired: TTL elapsed
+    Resuming --> Executing: tool runs with chosen args
+    Executing --> [*]: final response
+    Declined --> [*]: clean abort
+    Expired --> [*]: audit + auto-decline
 ```
 
-`details` is a **closed union** so the renderer stays simple — each kind has a typed React component in `apps/web/src/modules/copilot/workflows/components/`.
+The contract for the rest of the platform is also small: anything that writes goes through this card. Slack notifications and email integrations are intentionally not in scope for the v1 — when they land, they will be *surfaces* on the same approval primitive, not separate approval paths.
 
-### 6.2 Propagation
+---
 
-A tool with `requireApproval` suspends regardless of how deep in the delegation chain it sits. The top supervisor's `fullStream` emits a `tool-call-approval` event with `{ toolName, args, toolCallId, runId, agentPath: ['supervisor','work','planner'] }`. The web client surfaces the card; the user's choice resumes the run via:
+## Retrieval — why we trust vectors for this
 
-```ts
-await topSupervisor.approveToolCall({ runId, toolCallId, modifiedArgs? })
-// or
-await topSupervisor.declineToolCall({ runId, toolCallId })
+Vector search has a reputation for being either magic or unreliable, mostly because teams use it for the wrong shape of problem. We use it for one thing: *fuzzy match where exact match would miss*. That is dedup ("Safari login broken" versus "OAuth redirect Safari"), and that is skill matching ("OAuth experience" finds users tagged "auth" but not "oauth"). Everything else — IDs, status, dates, exact tags, RBAC — stays in Postgres where it belongs.
+
+Concretely: tasks and user profiles each have a sibling embedding table in the same module's schema. A change to the source row emits a domain event through the transactional outbox; an embedding worker (a subscriber, same mechanism every other event uses) reads the source, computes the embedding, and writes the vector row. The worker is idempotent on event id, skips re-embedding when a source-hash matches, and respects model-version columns so a future embedding-model upgrade is a backfill, not a panic.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant API as planner.createTask
+    participant Tx as transaction
+    participant Tasks as planner.tasks
+    participant Events as core.events (outbox)
+    participant Sub as embedding worker
+    participant Provider as embedding provider
+    participant Emb as planner.task_embeddings
+
+    API->>Tx: open
+    Tx->>Tasks: INSERT
+    Tx->>Events: APPEND task.created
+    Tx-->>API: commit
+    Events-->>Sub: notify
+    Sub->>Sub: check source_hash
+    Sub->>Provider: embed text
+    Provider-->>Sub: vector
+    Sub->>Emb: upsert
 ```
 
-`modifiedArgs` is how alternates work — for assignment, the top suggestion is `assigneeId: aliceId`; picking Bob sends `argsPatch: { assigneeId: bobId }` and Mastra resumes with the patched args. No custom resume protocol.
+Queries are *always hybrid*: a Postgres filter (tenant, status, date window) is pushed into the same call as the vector search, and the reranker — a small LLM, weights tunable per tenant — produces the final ordering. We do not run pure vector search at any point in the system. A scoring formula does not get hand-written either; Mastra's reranker handles it.
 
-### 6.3 Routing
-
-| Trigger | Approval lands in |
-|---|---|
-| Chat-initiated workflow | the chat thread that triggered it |
-| Workflow API (e.g. planner UI button) | a "Pending approvals" rail in the chat panel |
-| Group/multi-user workflows | initiating user only (delegation deferred) |
-
-### 6.4 Audit
-
-Every approval, decline, modifiedArgs, and TTL expiry writes a row to `core.events` (alongside domain events — the unified audit history). Includes the full args + actor + agent path.
+The Knowledge domain (documents, wiki, files) is intentionally not part of v1. When it lands, it will use Mastra's graph-RAG and document-chunker primitives. We have committed to not reinventing that surface either.
 
 ---
 
-## 7. Retrieval — vectors via Mastra primitives
+## Operational story
 
-We do **not** hand-roll vector search. Every retrieval tool is built on Mastra's `createVectorQueryTool` against `@mastra/pg`'s `PgVector` backend.
+A few things are worth understanding about how this runs in production.
 
-### 7.1 What gets embedded
+**Audit lives in one place.** Every approval, decline, timeout, and tool call writes a row to `core.events`, the same outbox the domain events use. There is one chronologically-ordered tape of everything the platform has done. This is what we hand to compliance review, to incident response, and to the customer when they ask "why did the assistant assign this to Carol?"
 
-Embeddings are a **derived index** for fuzzy/semantic lookup only. Postgres is the source of truth. Anything that admits an exact match (IDs, enums, dates, RBAC, status flags, exact skill tags) stays in SQL.
+**Observability is per-layer.** Latency and token cost are measured at the top supervisor, each domain supervisor, each specialist, each workflow step, each tool. When the user reports "the assistant feels slow", we can name the layer, not guess. The traces export to OpenTelemetry; the dashboards live in Grafana alongside the rest of the platform.
 
-| Source | Embedded content | Table |
-|---|---|---|
-| **Task** | `title \n\n description \n\n skill_tags joined` | `planner.task_embeddings` |
-| **User profile** | `displayName \n\n role \n\n skills joined \n\n bio` | `identity.user_profile_embeddings` |
+**Conversation state persists.** Mastra's memory layer is configured against our Postgres, scoped to the `copilot` schema. A user closing the tab and reopening it picks up the thread. A supervisor process restarting mid-approval finds the suspended run on disk. There is no in-memory state we would lose to a restart.
 
-Tables follow the [§10 partition + HNSW pattern](architecture.md#10-embeddings-and-retrieval). Sync is event-driven via the outbox + `source_hash` change detection (idempotent, model upgrades re-embed via `model_id` filter).
+**Safety rails sit on top of delegation.** Mastra exposes hooks at the start and end of every delegation. We use them for three things: depth-capping (no more than four hops top-to-leaf), loop detection (the same agent twice in a single run is a bug), and per-tenant step budgets (a runaway agent gets aborted with a structured error, never a wall-clock timeout).
 
-### 7.2 Query pattern — always hybrid, never pure vector
-
-```ts
-const taskDedupSearch = createVectorQueryTool({
-  vectorStoreName: 'pg',
-  indexName: 'planner_task_embeddings',
-  model: embeddingProvider,           // from @seta/shared-embeddings
-  enableFilter: true,
-  reranker: {
-    model: '__GATEWAY_OPENAI_MODEL_MINI__',
-    options: {
-      weights: { semantic: 0.55, vector: 0.30, position: 0.15 },  // per-tenant tunable
-      topK: 5,
-    },
-  },
-});
-
-await taskDedupSearch.execute({
-  queryText: draft.title + '\n\n' + draft.description,
-  topK: 20,
-  filter: {
-    tenant_id: session.tenantId,
-    status: { $ne: 'archived' },
-    created_at: { $gt: ninetyDaysAgoISO },
-  },
-});
-```
-
-The metadata filter is pushed into the same pgvector round-trip. The reranker is per-tenant tunable via `copilot.tenant_settings.dedup_weights`. We don't write our own scoring formula.
-
-### 7.3 Relational + vector are merged in workflow code, not in the tool
-
-For skill-match assignment, the workflow runs two parallel branches: a relational fast path (exact `skills && task.skill_tags` overlap) and a vector enrichment (`userSkillSearch`). The branches merge by `user_id`. The vector tool is a building block; the workflow is the composer.
-
-### 7.4 Deferred RAG primitives (M3 Knowledge slice)
-
-When the Knowledge domain lands:
-- `createGraphRAGTool` over `copilot.tenant_knowledge_embeddings` for wiki/doc Q&A — **use this, don't reinvent**.
-- `MDocument` + `createDocumentChunkerTool` for the ingestion pipeline — **use these, don't reinvent**.
+**Evaluation is continuous.** Three layers of tests run on every PR and nightly. Tool-level integration tests use a real Postgres via testcontainers. Workflow tests replay golden traces and verify dedup precision and recall against a labeled corpus. Agent-level tests run a fixture set of fifty routing prompts and twenty end-to-end chat flows; we gate merges on pass rate.
 
 ---
 
-## 8. Runtime safety, observability, audit
+## How this absorbs the next module
 
-### 8.1 Delegation guards
+The product roadmap names timesheet, PMO, finance, HR, and knowledge as modules that will land over the next year. None of them require changes to the copilot package.
 
-`onDelegationStart` and `onDelegationComplete` hooks wrap every domain supervisor:
+Adding a module means three things, and only three things. The module declares which domain it belongs to (it picks one of the four). It registers a specialist with its own tools. If it has reads other modules will want — capacity for timesheet, budget for finance — it publishes those reads to the shared cross-module registry with the RBAC they require. After a process restart, the supervisor tree has a new sub-agent under its domain, the routing prompt mentions the new domain blurb, and the existing specialists can consume the new reads. Nothing else moves.
 
-- **Depth cap**: bail past delegation depth 4 (top → domain → specialist → workflow is the sane max).
-- **Loop detection**: bail if the same agent is visited twice in a single run.
-- **Per-tenant max-steps budget**: bail with a structured error to the user when exceeded.
-
-### 8.2 Observability
-
-Per [Mastra metrics guidance](https://mastra.ai/docs/observability/metrics/overview):
-
-| Metric | Dimensions |
-|---|---|
-| Latency | top supervisor / domain supervisor / specialist / workflow step / tool |
-| Token cost | same dimensions, per tenant |
-| Approval funnel | card-issued → approved / declined / TTL-expired, per workflow + tenant |
-| Dedup quality | candidates-shown → user-action (Create new / Comment / Related / Sub-task / Cancel) |
-| Assignment quality | suggestion-rank → user-pick distribution |
-
-Traces export to OpenTelemetry; dashboards in Grafana.
-
-### 8.3 Audit
-
-Every write-tool approval/decline/TTL-expiry and every workflow start/complete/fail writes to `core.events` (via `withEmit`). One unified history with domain events.
-
-### 8.4 Eval suite
-
-Three layers (run on PR + nightly):
-
-| Layer | What | Pass bar |
-|---|---|---|
-| **Tool** | unit + integration against real Postgres (testcontainers) | green |
-| **Workflow** | golden-trace replays + threshold-tuning vs labeled corpus | green; dedup P≥0.90, R≥0.80 |
-| **Agent** | routing evals (50 prompts) + e2e evals (20 chat flows) | routing ≥95%, e2e ≥90% |
+This is the property we designed for: a growing product surface should be additive work for the team that owns each module, not a coordination tax on the copilot team. The registry is the seam that makes that property hold.
 
 ---
 
-## 9. Adding a module
+## What's deferred, and why
 
-1. Scaffold via `pnpm gen module <name>` (see [`creating-modules.md`](creating-modules.md)).
-2. Build the module's domain code as usual (drizzle schema, public-surface functions, events, subscribers).
-3. Author copilot tools in `packages/<name>/src/backend/agent-tools/`:
-   - One file per tool (e.g. `assign-task.ts`, `get-task.ts`).
-   - Each tool wraps a public-surface function. Writes set `needsApproval: true`.
-4. Create `packages/<name>/src/backend/agent-tools/register.ts`:
+We chose not to ship a few things in v1 because they add complexity that the user does not yet feel.
 
-   ```ts
-   import { CopilotRegistry } from '@seta/copilot-sdk';
-   import { myTool1, myTool2, myWriteTool } from './...';
+We do not run dedup on *updates* to tasks, only on creation. Updates are too noisy a signal — a user editing a title repeatedly should not see a card on every keystroke. The metric to un-defer is whether duplicate creation rate stays meaningfully above zero after dedup-on-create lands.
 
-   CopilotRegistry.registerSpecialist({
-     domain: 'work',                       // pick from Work | People | Self | Meta
-     id: '<module>',
-     description: '...',                   // shown to the supervisor for routing
-     instructions: () => '...',            // sub-agent's own prompt
-     tools: { my_tool1: myTool1, my_tool2: myTool2, my_writeTool: myWriteTool },
-   });
-   ```
+We do not yet have a Knowledge domain. RAG over documents is a substantial slice of its own, with chunking, embedding, ingestion, and a different retrieval surface; pulling it forward would have delayed the entire system.
 
-5. Export the side-effect entry from `package.json`:
+We do not run a learning loop yet — the user's accept/reject choices on the assignment card do not feed back into the scoring weights. We will add this once the eval infrastructure for LLM-as-judge quality scoring is in place.
 
-   ```json
-   "./agent-tools/register": {
-     "types": "./src/backend/agent-tools/register.ts",
-     "default": "./src/backend/agent-tools/register.ts"
-   }
-   ```
+We do not surface approvals in Slack or email. Once the in-app card pattern is stable and the on-call rotation has Slack as a primary surface, we will extend the same primitive — not build a parallel path.
 
-6. Add the side-effect import to `packages/copilot/src/backend/init-registry.ts`:
-
-   ```ts
-   import '@seta/<module>/agent-tools/register';
-   ```
-
-7. (If you expose reads other specialists need) call `CopilotRegistry.registerCrossModuleReadTool({...})` for each — RBAC is **required**.
-8. Run `pnpm typecheck && pnpm lint && pnpm test`. The CI invariants from §3.4 will catch missing approvals, missing RBAC, naming violations, and direct cross-module tool imports.
-
-No edit to `packages/copilot/` is needed. The supervisor tree picks up the new specialist at next boot.
+A complete deferred-work table lives in the originating spec at `docs/superpowers/specs/2026-05-25-supervisor-refactor-umbrella-design.md` §12.
 
 ---
 
-## 10. Adding a workflow
+## References
 
-1. Decide the domain (Work / People / Self / Meta).
-2. Author shared schemas in `packages/<module>/src/backend/workflows/<name>/schemas.ts` (zod).
-3. Author each step as its own file under `steps/`. Steps are plain async functions taking typed inputs, returning typed outputs.
-4. Compose them in `workflow.ts` using `createWorkflow(...).then(...).commit()`.
-5. Export a spec in `spec.ts`:
-
-   ```ts
-   export const myWorkflowSpec = {
-     domain: 'work',
-     id: 'myWorkflow',
-     description: 'What this does in one sentence',
-     inputSchema, outputSchema,
-     workflow: myWorkflow,
-     hitlSteps: ['confirmStep'],
-   };
-   ```
-
-6. Register in `agent-tools/register.ts`:
-
-   ```ts
-   import { myWorkflowSpec } from '../workflows/<name>/spec';
-   CopilotRegistry.registerWorkflow(myWorkflowSpec);
-   ```
-
-7. (If users trigger the workflow from outside chat — e.g. a planner UI button) call the generic `POST /api/workflows/:workflowId/run` endpoint with `{ inputData, requestContext }`. The HITL card surfaces in the chat panel via the same `tool-call-approval` stream.
-
----
-
-## 11. Operational rules
-
-- **One-shot replacements, no dual versions.** No `_v2` tool names, no transition flags, no compatibility shims. Each PR cuts over fully and deletes the predecessor.
-- **HITL on every write tool — non-negotiable.** Auto-approval and bypass flags are rejected on review.
-- **The bus is the outbox.** State change + event row commit in one transaction via `core.emit()` inside `withEmit`. No separate publish path.
-- **No cross-schema foreign keys.** `planner.tasks.assignee_id` is `uuid` with no FK to `identity.user.id`. Consistency is event-driven.
-- **No cross-module data-handle sharing.** A module never hands its Drizzle client to another. Mutation crosses the boundary only through public-surface calls (RBAC re-checked at the callee) or domain events.
-- **Specialists ≤ ~15 tools.** Past that, split the module's responsibilities or extract a sub-workflow. Tool schemas live in the system prompt; overflow burns cache hits and worsens model tool selection.
-- **Per-supervisor instruction budget ≈ 4 KB.** CI counts; over budget triggers a domain split.
-
----
-
-## 12. References
-
-- **Spec**: `docs/superpowers/specs/2026-05-25-supervisor-refactor-umbrella-design.md` — the design that this architecture implements.
-- **Plans**:
-  - `docs/superpowers/plans/2026-05-25-supervisor-refactor-pr1-foundation.md`
-  - `docs/superpowers/plans/2026-05-25-supervisor-refactor-pr2-dedup.md`
-  - `docs/superpowers/plans/2026-05-25-supervisor-refactor-pr3-assign.md`
-- **Mastra docs**:
+- **Spec**: `docs/superpowers/specs/2026-05-25-supervisor-refactor-umbrella-design.md` — the design this architecture implements.
+- **Plans**: `docs/superpowers/plans/2026-05-25-supervisor-refactor-pr{1,2,3}-*.md` — the three-PR rollout.
+- **Mastra**:
   - [Supervisor agents](https://mastra.ai/docs/agents/supervisor-agents)
   - [Agent approval propagation](https://mastra.ai/docs/agents/agent-approval)
   - [`createVectorQueryTool`](https://mastra.ai/reference/tools/vector-query-tool)
-  - [`createGraphRAGTool`](https://mastra.ai/reference/tools/graph-rag-tool)
-  - [`createTool`](https://mastra.ai/reference/tools/create-tool)
-- **Mastra source**: `../mastra/` (sibling checkout) — authoritative for `@mastra/core` API names + behaviors.
-- **Sibling docs**:
-  - [`architecture.md`](architecture.md) — repo-wide architecture; §9 high-level overview of this system.
-  - [`creating-modules.md`](creating-modules.md) — how to scaffold a new module.
+- **Sibling docs**: [`architecture.md`](architecture.md) — repo-wide architecture; [`creating-modules.md`](creating-modules.md) — module scaffold.
