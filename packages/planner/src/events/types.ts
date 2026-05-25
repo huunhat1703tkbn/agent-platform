@@ -694,6 +694,58 @@ export interface PlannerLabelCategorySlotChanged {
 }
 
 // ---------------------------------------------------------------------------
+// Task comments
+// ---------------------------------------------------------------------------
+
+export interface PlannerCommentCreated {
+  event_type: 'planner.comment.created';
+  event_version: 1;
+  aggregate_type: 'planner.comment';
+  aggregate_id: Uuid;
+  payload: {
+    actor: PlannerEventActor;
+    comment_id: Uuid;
+    task_id: Uuid;
+    plan_id: Uuid;
+    group_id: Uuid;
+    author_id: Uuid;
+    body: string;
+    created_at: string;
+  };
+}
+
+export interface PlannerCommentUpdated {
+  event_type: 'planner.comment.updated';
+  event_version: 1;
+  aggregate_type: 'planner.comment';
+  aggregate_id: Uuid;
+  payload: {
+    actor: PlannerEventActor;
+    comment_id: Uuid;
+    task_id: Uuid;
+    plan_id: Uuid;
+    group_id: Uuid;
+    before: { body: string };
+    after: { body: string; edited_at: string };
+  };
+}
+
+export interface PlannerCommentDeleted {
+  event_type: 'planner.comment.deleted';
+  event_version: 1;
+  aggregate_type: 'planner.comment';
+  aggregate_id: Uuid;
+  payload: {
+    actor: PlannerEventActor;
+    comment_id: Uuid;
+    task_id: Uuid;
+    plan_id: Uuid;
+    group_id: Uuid;
+    author_id: Uuid;
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Discriminated union
 // ---------------------------------------------------------------------------
 
@@ -735,4 +787,7 @@ export type PlannerEvent =
   | PlannerLabelCategorySlotChanged
   | PlannerPlanSyncStatusChanged
   | PlannerTaskSyncStatusChanged
-  | PlannerPlanConflictResolved;
+  | PlannerPlanConflictResolved
+  | PlannerCommentCreated
+  | PlannerCommentUpdated
+  | PlannerCommentDeleted;

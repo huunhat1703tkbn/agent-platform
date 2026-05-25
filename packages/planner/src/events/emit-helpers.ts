@@ -6,6 +6,9 @@ import type {
   PlannerChecklistItemAdded,
   PlannerChecklistItemRemoved,
   PlannerChecklistItemUpdated,
+  PlannerCommentCreated,
+  PlannerCommentDeleted,
+  PlannerCommentUpdated,
   PlannerEventActor,
   PlannerGroupCreated,
   PlannerGroupDeleted,
@@ -1007,5 +1010,97 @@ export async function emitPlannerLabelCategorySlotChanged(args: {
       before: args.before,
       after: args.after,
     },
+  });
+}
+
+// -----
+// Task comments
+// -----
+
+export async function emitPlannerCommentCreated(args: {
+  actor: PlannerEventActor;
+  tenant_id: Uuid;
+  comment_id: Uuid;
+  task_id: Uuid;
+  plan_id: Uuid;
+  group_id: Uuid;
+  author_id: Uuid;
+  body: string;
+  created_at: string;
+}): Promise<void> {
+  const payload: PlannerCommentCreated['payload'] = {
+    actor: args.actor,
+    comment_id: args.comment_id,
+    task_id: args.task_id,
+    plan_id: args.plan_id,
+    group_id: args.group_id,
+    author_id: args.author_id,
+    body: args.body,
+    created_at: args.created_at,
+  };
+  await emit({
+    tenantId: args.tenant_id,
+    aggregateType: 'planner.comment',
+    aggregateId: args.comment_id,
+    eventType: 'planner.comment.created',
+    eventVersion: 1,
+    payload,
+  });
+}
+
+export async function emitPlannerCommentUpdated(args: {
+  actor: PlannerEventActor;
+  tenant_id: Uuid;
+  comment_id: Uuid;
+  task_id: Uuid;
+  plan_id: Uuid;
+  group_id: Uuid;
+  before_body: string;
+  after_body: string;
+  edited_at: string;
+}): Promise<void> {
+  const payload: PlannerCommentUpdated['payload'] = {
+    actor: args.actor,
+    comment_id: args.comment_id,
+    task_id: args.task_id,
+    plan_id: args.plan_id,
+    group_id: args.group_id,
+    before: { body: args.before_body },
+    after: { body: args.after_body, edited_at: args.edited_at },
+  };
+  await emit({
+    tenantId: args.tenant_id,
+    aggregateType: 'planner.comment',
+    aggregateId: args.comment_id,
+    eventType: 'planner.comment.updated',
+    eventVersion: 1,
+    payload,
+  });
+}
+
+export async function emitPlannerCommentDeleted(args: {
+  actor: PlannerEventActor;
+  tenant_id: Uuid;
+  comment_id: Uuid;
+  task_id: Uuid;
+  plan_id: Uuid;
+  group_id: Uuid;
+  author_id: Uuid;
+}): Promise<void> {
+  const payload: PlannerCommentDeleted['payload'] = {
+    actor: args.actor,
+    comment_id: args.comment_id,
+    task_id: args.task_id,
+    plan_id: args.plan_id,
+    group_id: args.group_id,
+    author_id: args.author_id,
+  };
+  await emit({
+    tenantId: args.tenant_id,
+    aggregateType: 'planner.comment',
+    aggregateId: args.comment_id,
+    eventType: 'planner.comment.deleted',
+    eventVersion: 1,
+    payload,
   });
 }
