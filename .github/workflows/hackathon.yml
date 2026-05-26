@@ -21,9 +21,9 @@ env:
   ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
 
 jobs:
-  # ── 1. Compute a stable tag and ensure ECR repository exists ─────────────
+  # ── 1. Compute a stable tag once; pass it to downstream jobs ─────────────
   prepare:
-    name: Compute release tag & ensure ECR repo
+    name: Compute release tag
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.tag.outputs.value }}
@@ -34,21 +34,6 @@ jobs:
           INPUT="${{ github.event.inputs.tag }}"
           SHA="${GITHUB_SHA::12}"
           echo "value=${INPUT:-$SHA}" >> "$GITHUB_OUTPUT"
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v6.1.1
-        with:
-          aws-access-key-id:     ${{ secrets.AWS_ECR_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_ECR_SECRET_ACCESS_KEY }}
-          aws-region:            ${{ env.AWS_REGION }}
-
-      - name: Ensure ECR repository exists
-        run: |
-          aws ecr describe-repositories --repository-names "$ECR_REPOSITORY" \
-            || aws ecr create-repository \
-                 --repository-name "$ECR_REPOSITORY" \
-                 --image-tag-mutability MUTABLE \
-                 --image-scanning-configuration scanOnPush=true
 
   # ── 2. Build server and web images in parallel ───────────────────────────
   build:
