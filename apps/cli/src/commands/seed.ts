@@ -8,7 +8,10 @@ import {
   createGroup,
   createPlan,
   createTask,
+  listBuckets,
   listGroups,
+  listPlans,
+  listTasks,
 } from '@seta/planner';
 import { sql } from 'drizzle-orm';
 import pino from 'pino';
@@ -304,11 +307,19 @@ export async function seedCommand(opts: SeedOpts): Promise<void> {
       `${JSON.stringify({ phase: 'members', added: membersAdded, skipped: membersSkipped })}\n`,
     );
 
-    // Phase 5 — Create plans under their assigned group
+    // Phase 5 — Create plans under their assigned group (idempotent: reuse existing by name+group)
     log.info('phase 5: creating plans');
     const planMap = new Map<string, string>(); // csvPlanId → db uuid
     let plansCreated = 0;
+    let plansReused = 0;
     let plansSkipped = 0;
+
+    // Pre-load all existing plans so we can match by name without N+1 queries.
+    const allExistingPlans = await listPlans({ session });
+    // Key: `${groupId}::${name}` → plan id
+    const existingPlansByKey = new Map(
+      allExistingPlans.map((p) => [`${p.group_id}::${p.name}`, p.id]),
+    );
 
     for (const row of csvs.plans) {
       const dbGroupId = groupMap.get(row.group_id);
@@ -320,13 +331,17 @@ export async function seedCommand(opts: SeedOpts): Promise<void> {
         plansSkipped++;
         continue;
       }
+      const planName = row.title || 'Untitled Plan';
+      const existingPlanId = existingPlansByKey.get(`${dbGroupId}::${planName}`);
+      if (existingPlanId) {
+        planMap.set(row.plan_id, existingPlanId);
+        plansReused++;
+        continue;
+      }
       try {
-        const plan = await createPlan({
-          group_id: dbGroupId,
-          name: row.title || 'Untitled Plan',
-          session,
-        });
+        const plan = await createPlan({ group_id: dbGroupId, name: planName, session });
         planMap.set(row.plan_id, plan.id);
+        existingPlansByKey.set(`${dbGroupId}::${planName}`, plan.id);
         plansCreated++;
       } catch (err) {
         log.warn({ csv_plan_id: row.plan_id, err }, 'createPlan failed, skipping');
@@ -337,11 +352,23 @@ export async function seedCommand(opts: SeedOpts): Promise<void> {
       `${JSON.stringify({ phase: 'plans', created: plansCreated, skipped: plansSkipped })}\n`,
     );
 
-    // Phase 6 — Create buckets (CSV order = sort_order via createBucket's append logic)
+    // Phase 6 — Create buckets (idempotent: reuse existing by name+plan)
     log.info('phase 6: creating buckets');
     const bucketMap = new Map<string, string>(); // csvBucketId → db uuid
     let bucketsCreated = 0;
+    let bucketsReused = 0;
     let bucketsSkipped = 0;
+
+    // Pre-load buckets for every plan we created/reused.
+    const existingBucketsByKey = new Map<string, string>(); // `${planId}::${name}` → bucket id
+    for (const planId of new Set(planMap.values())) {
+      try {
+        const existing = await listBuckets({ plan_id: planId, session });
+        for (const b of existing) existingBucketsByKey.set(`${planId}::${b.name}`, b.id);
+      } catch {
+        // plan may have been skipped — ignore
+      }
+    }
 
     for (const row of csvs.buckets) {
       const planId = planMap.get(row.plan_id);
@@ -353,9 +380,16 @@ export async function seedCommand(opts: SeedOpts): Promise<void> {
         bucketsSkipped++;
         continue;
       }
+      const existingBucketId = existingBucketsByKey.get(`${planId}::${row.name}`);
+      if (existingBucketId) {
+        bucketMap.set(row.bucket_id, existingBucketId);
+        bucketsReused++;
+        continue;
+      }
       try {
         const bucket = await createBucket({ plan_id: planId, name: row.name, session });
         bucketMap.set(row.bucket_id, bucket.id);
+        existingBucketsByKey.set(`${planId}::${row.name}`, bucket.id);
         bucketsCreated++;
       } catch (err) {
         log.warn({ csv_bucket_id: row.bucket_id, err }, 'createBucket failed, skipping');
@@ -366,15 +400,28 @@ export async function seedCommand(opts: SeedOpts): Promise<void> {
       `${JSON.stringify({
         phase: 'buckets',
         created: bucketsCreated,
+        reused: bucketsReused,
         skipped: bucketsSkipped,
       })}\n`,
     );
 
-    // Phase 7 — Create tasks and assignments
+    // Phase 7 — Create tasks and assignments (idempotent: reuse existing by title+plan)
     log.info('phase 7: creating tasks');
     let tasksCreated = 0;
+    let tasksReused = 0;
     let assignmentsCreated = 0;
     let tasksSkipped = 0;
+
+    // Pre-load tasks for every plan we created/reused.
+    const existingTasksByKey = new Map<string, string>(); // `${planId}::${title}` → task id
+    for (const planId of new Set(planMap.values())) {
+      try {
+        const { tasks: existing } = await listTasks({ filters: { plan_id: planId }, session });
+        for (const t of existing) existingTasksByKey.set(`${planId}::${t.title}`, t.id);
+      } catch {
+        // plan may have been skipped — ignore
+      }
+    }
 
     for (const row of csvs.tasks) {
       const planId = planMap.get(row.plan_id);
@@ -387,6 +434,13 @@ export async function seedCommand(opts: SeedOpts): Promise<void> {
         continue;
       }
 
+      const taskTitle = row.title || 'Untitled';
+      const existingTaskId = existingTasksByKey.get(`${planId}::${taskTitle}`);
+      if (existingTaskId) {
+        tasksReused++;
+        continue;
+      }
+
       const bucketId = bucketMap.get(row.bucket_id) ?? undefined;
       const skill_tags = splitIds(row.tags);
 
@@ -394,7 +448,7 @@ export async function seedCommand(opts: SeedOpts): Promise<void> {
       const task = await createTask({
         plan_id: planId,
         bucket_id: bucketId,
-        title: row.title || 'Untitled',
+        title: taskTitle,
         description: row.description || undefined,
         priority_number: mapPriorityNumber(row.priority),
         percent_complete: statusFields.percent_complete,
@@ -429,6 +483,7 @@ export async function seedCommand(opts: SeedOpts): Promise<void> {
       `${JSON.stringify({
         phase: 'tasks',
         created: tasksCreated,
+        reused: tasksReused,
         assignments: assignmentsCreated,
         skipped: tasksSkipped,
       })}\n`,
