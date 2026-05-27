@@ -194,7 +194,7 @@ sequenceDiagram
 
 ---
 
-## 3. Infrastructure & Deployment Guide
+## 3. Infrastructure
 
 > Each hackathon team is allocated a secure, isolated cloud sandbox environment in AWS.
 
@@ -202,8 +202,8 @@ sequenceDiagram
 
 ```mermaid
 graph TD
-    subgraph Public["Domain"]
-        DNS["YOUR_TEAM.ai-hackathon.seta-international.com"]
+    subgraph Public["Browser"]
+        DNS["your_team.ai-hackathon.seta-international.com"]
     end
 
     subgraph Docker["AWS EC2"]
@@ -222,7 +222,7 @@ graph TD
     Docker -->|Secure Asset Sync| S3
 ```
 
-### Deployment Pipeline
+##4 Development Pipeline
 
 1. **Fork & Configure:** Fork the repository to your team workspace and configure production secrets (database URLs, LLM API keys, and session tokens).
 2. **Build & Push to ECR:** Build the root multi-stage Dockerfile (frontend static assets build and backend compilation bundle) and push the image to your dedicated AWS ECR repository.
