@@ -1,11 +1,14 @@
 import { toAISdkStream } from '@mastra/ai-sdk';
 import type { Mastra } from '@mastra/core';
 import type { Agent } from '@mastra/core/agent';
+import type { MemoryConfig } from '@mastra/core/memory';
 import { RequestContext } from '@mastra/core/request-context';
+import type { Memory } from '@mastra/memory';
 import {
   AgentRegistry,
   type ChatHitlDecider,
   type ChatHitlRecorder,
+  RC_AGENT_MEMORY,
   RC_CHAT_HITL_RECORDER,
 } from '@seta/agent-sdk';
 import { createUIMessageStream, createUIMessageStreamResponse, type UIMessage } from 'ai';
@@ -85,6 +88,14 @@ export type AgentRouteDeps = {
    * packages/agent (engine) and feature modules like packages/planner.
    */
   chatHitlDeciders?: Record<string, ChatHitlDecider>;
+  /**
+   * Resource-scoped Memory instance + the same MemoryConfig used to build it.
+   * Injected into requestContext under RC_AGENT_MEMORY by the chat route so
+   * tools can do server-side working-memory writes (entity recorder, resolver).
+   * Optional because tests may construct routes without a configured Memory.
+   */
+  memory?: Memory;
+  memoryConfig?: MemoryConfig;
 };
 
 export type AgentRouteEnv = { Variables: { session: SessionLike } };
@@ -282,6 +293,13 @@ export function registerAgentRoutes(app: Hono<AgentRouteEnv>, deps: AgentRouteDe
         pool: deps.pool,
       });
     requestContext.set(RC_CHAT_HITL_RECORDER, recorder);
+
+    if (deps.memory && deps.memoryConfig) {
+      requestContext.set(RC_AGENT_MEMORY, {
+        memory: deps.memory,
+        memoryConfig: deps.memoryConfig,
+      });
+    }
 
     deps.log?.warn(
       {

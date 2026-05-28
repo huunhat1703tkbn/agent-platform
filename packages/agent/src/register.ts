@@ -121,7 +121,7 @@ export function registerAgent(deps: {
   registerPendingAssignReader(getPendingAssignRunIdForTask);
   void mastra.startWorkers();
 
-  const { topSupervisor, domainAgents } = buildSupervisorTree({
+  const { topSupervisor, domainAgents, memory, memoryConfig } = buildSupervisorTree({
     mastra,
     databaseUrl: deps.databaseUrl,
   });
@@ -142,6 +142,8 @@ export function registerAgent(deps: {
         pool: deps.pool,
         log: deps.log,
         chatHitlDeciders: deps.chatHitlDeciders,
+        memory,
+        memoryConfig,
       });
     },
     mastra,
