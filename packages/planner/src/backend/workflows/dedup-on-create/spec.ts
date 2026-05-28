@@ -18,7 +18,12 @@ import {
 import { buildConfirmNotDuplicateCard } from './steps/confirm-not-duplicate.ts';
 import { applyDupDecision, findDupCandidates } from './workflow.ts';
 
-const DEFAULT_THRESHOLDS = { likelyDup: 0.18, maybeDup: 0.3 };
+// Thresholds are distances (1 - cosine_score). Reranker scores in this
+// deployment sit in the 0.55–0.70 range for near-duplicates, so the
+// distance thresholds must be calibrated accordingly:
+//   likelyDup  < 0.35  →  score > 0.65  (strong duplicate signal)
+//   maybeDup   < 0.45  →  score > 0.55  (moderate duplicate signal)
+const DEFAULT_THRESHOLDS = { likelyDup: 0.35, maybeDup: 0.45 };
 
 let lazyProvider: EmbeddingProvider | undefined;
 function getProvider(): EmbeddingProvider {
