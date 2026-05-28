@@ -61,36 +61,36 @@ function buildMemory(opts: {
   const storage = opts.mastra?.getStorage();
   if (!storage) return undefined;
 
-  const baseOpts = {
+  const baseOpts: Pick<MemoryConfig, 'lastMessages' | 'generateTitle' | 'workingMemory'> = {
     lastMessages: agentEnv.AGENT_MEMORY_LAST_MESSAGES,
-    generateTitle: true as const,
+    generateTitle: true,
     workingMemory: {
-      enabled: true as const,
-      scope: 'resource' as const,
+      enabled: true,
+      scope: 'resource',
       schema: WorkingMemorySchema,
     },
   };
 
   if (!opts.databaseUrl) {
-    const memoryConfig = { ...baseOpts, semanticRecall: false as const };
+    const memoryConfig: MemoryConfig = { ...baseOpts, semanticRecall: false };
     const memory = new GuardedMemory({
       storage: storage as never,
       options: memoryConfig,
     });
-    return { memory, memoryConfig: memoryConfig as MemoryConfig };
+    return { memory, memoryConfig };
   }
 
   const vector = getRecallVector(opts.databaseUrl);
   const embedder = new ModelRouterEmbeddingModel('openai/text-embedding-3-small');
-  const memoryConfig = {
+  const memoryConfig: MemoryConfig = {
     ...baseOpts,
     semanticRecall: {
       topK: 5,
       messageRange: 2,
-      scope: 'thread' as const,
+      scope: 'thread',
       indexConfig: {
-        type: 'hnsw' as const,
-        metric: 'dotproduct' as const,
+        type: 'hnsw',
+        metric: 'dotproduct',
         hnsw: { m: 16, efConstruction: 64 },
       },
     },
@@ -101,7 +101,7 @@ function buildMemory(opts: {
     embedder,
     options: memoryConfig,
   });
-  return { memory, memoryConfig: memoryConfig as MemoryConfig };
+  return { memory, memoryConfig };
 }
 
 // ---------------------------------------------------------------------------
