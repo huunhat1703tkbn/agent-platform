@@ -182,6 +182,7 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     networks:
       - seta-internal
+      - seta-edge  # egress for OpenAI / external embedding APIs
     depends_on:
       postgres:
         condition: service_healthy
