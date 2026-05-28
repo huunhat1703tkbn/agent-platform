@@ -200,8 +200,29 @@ jobs:
             fi
 
             docker compose --env-file /opt/seta/.env pull server web worker
-            docker compose --env-file /opt/seta/.env up -d --no-deps --remove-orphans proxy server web worker
+
+            # 1. Run migrations BEFORE starting app containers so the server
+            #    never boots against a schema that's behind.
             docker compose --env-file /opt/seta/.env run --rm migrator
+
+            # 2. Start app containers and wait until every healthcheck passes
+            #    (or fail fast if any container becomes unhealthy).
+            docker compose --env-file /opt/seta/.env up -d \
+              --no-deps --remove-orphans --wait --wait-timeout 120 \
+              proxy server web worker
+
+            # 3. Smoke-test: verify the API health endpoint responds 200.
+            echo "=== Smoke test ==="
+            for i in $(seq 1 10); do
+              code=$(curl -s -o /dev/null -w "%{http_code}" \
+                --max-time 5 "https://$APP_DOMAIN/api/health" || true)
+              [ "$code" = "200" ] && break
+              echo "  attempt $i: got $code, retrying in 5s…"
+              sleep 5
+            done
+            [ "$code" = "200" ] \
+              || { echo "❌ Smoke test failed (last status: $code)"; exit 1; }
+            echo "✅ Smoke test passed"
 
             # Remove dangling images left by previous deploys
             docker image prune -f
