@@ -52,7 +52,12 @@ export type {
   AgentRequestContext,
   AuthenticatedUserActor,
 } from './request-context.ts';
-export { actorFromContext, RequestContextSchema } from './request-context.ts';
+export {
+  type AgentMemoryHandle,
+  actorFromContext,
+  RC_AGENT_MEMORY,
+  RequestContextSchema,
+} from './request-context.ts';
 export type { SessionLike } from './session.ts';
 export { type AgentSession, sessionFromRequestContext } from './session-context.ts';
 export type { SubscriberBuilder, SubscriberBuilderDeps } from './subscriber-builder.ts';
