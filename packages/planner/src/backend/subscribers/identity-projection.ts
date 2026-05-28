@@ -80,7 +80,7 @@ export async function applyProfileUpdated(
       ${after.availability_status !== undefined ? sql`${after.availability_status}` : sql`'available'`},
       ${after.timezone !== undefined ? sql`${after.timezone}` : sql`'UTC'`},
       NOW()
-    FROM identity.user u
+    FROM identity.user u -- cross-schema-read: planner reads identity.user to seed assignee_projection
     WHERE u.id = ${userId}
     ON CONFLICT (user_id) DO UPDATE SET ${sql.join(conflictClauses, sql`, `)}
   `);

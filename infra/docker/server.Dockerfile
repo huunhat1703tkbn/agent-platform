@@ -71,9 +71,9 @@ RUN pnpm --filter=@seta/server exec tsc --noEmit \
 # ============================================================================
 FROM sources AS prune
 
-RUN pnpm deploy --filter=@seta/server --prod --ignore-scripts /out/apps/server \
- && pnpm deploy --filter=@seta/cli    --prod --ignore-scripts /out/apps/cli \
- && pnpm deploy --filter=@seta/worker --prod --ignore-scripts /out/apps/worker
+RUN pnpm --filter=@seta/server deploy --prod --ignore-scripts --legacy /out/apps/server \
+ && pnpm --filter=@seta/cli    deploy --prod --ignore-scripts --legacy /out/apps/cli \
+ && pnpm --filter=@seta/worker deploy --prod --ignore-scripts --legacy /out/apps/worker
 
 # Copy source files into the deploy tree (pnpm deploy ships `files`, but
 # these workspace apps don't declare `files`, so we explicitly include src/).
