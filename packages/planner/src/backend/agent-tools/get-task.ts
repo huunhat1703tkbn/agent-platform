@@ -1,15 +1,29 @@
-import { actorFromContext, defineAgentTool, getPendingAssignRunIdForTask } from '@seta/agent-sdk';
+import {
+  actorFromContext,
+  defineAgentTool,
+  getPendingAssignRunIdForTask,
+  recordEntityExposure,
+} from '@seta/agent-sdk';
 import { buildActorSession } from '@seta/identity';
 import { z } from 'zod';
 import { getPlan } from '../domain/get-plan.ts';
 import { getTask } from '../domain/get-task.ts';
+import { resolveTaskRef } from './resolve-task-ref.ts';
 
 export const plannerGetTaskTool = defineAgentTool({
   id: 'planner_getTask',
   name: 'Look Up Task',
   description: 'Get a task by ID with its assignees, labels, and checklist summary.',
   input: z.object({
-    taskId: z.string().uuid().describe('The task ID'),
+    taskRef: z
+      .string()
+      .trim()
+      .min(1)
+      .describe(
+        'Task UUID, or an ordinal reference into your working memory `recentTasks` list: ' +
+          '"#1" / "1" / "first" → most recent, "#2" / "second" → next, "last" → most recent. ' +
+          'Prefer ordinals when the user is referring to something you just discussed.',
+      ),
   }),
   output: z.object({
     task: z.object({
@@ -66,14 +80,15 @@ export const plannerGetTaskTool = defineAgentTool({
   execute: async (input, ctx) => {
     const actor = actorFromContext(ctx);
     const session = await buildActorSession(actor);
+    const { taskId } = await resolveTaskRef(ctx as never, input.taskRef);
 
     const [taskRow, pendingAssignWorkflowRunId] = await Promise.all([
       getTask({
-        task_id: input.taskId,
+        task_id: taskId,
         session,
       }),
       getPendingAssignRunIdForTask({
-        taskId: input.taskId,
+        taskId,
         tenantId: session.tenant_id,
       }),
     ]);
@@ -93,6 +108,11 @@ export const plannerGetTaskTool = defineAgentTool({
         : taskRow.percent_complete > 0
           ? 'in_progress'
           : 'not_started';
+
+    await recordEntityExposure(ctx as never, {
+      recentTasks: [{ taskId: taskRow.id, title: taskRow.title }],
+      lastDiscussedTaskId: taskRow.id,
+    });
 
     return {
       task: {

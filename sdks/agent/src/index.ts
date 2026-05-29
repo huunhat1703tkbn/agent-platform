@@ -23,6 +23,11 @@ export {
 export { defineCrossModuleReadAsTool } from './cross-module-read-as-tool.ts';
 export { defineAgentTool } from './define-agent-tool.ts';
 export {
+  __resetMutexesForTests,
+  type EntityPatch,
+  recordEntityExposure,
+} from './entity-recorder.ts';
+export {
   AgentToolError,
   type AgentToolErrorCode,
   ToolBreakerOpenError,
@@ -52,7 +57,13 @@ export type {
   AgentRequestContext,
   AuthenticatedUserActor,
 } from './request-context.ts';
-export { actorFromContext, RequestContextSchema } from './request-context.ts';
+export {
+  type AgentMemoryHandle,
+  actorFromContext,
+  RC_AGENT_MEMORY,
+  RC_THREAD_ID,
+  RequestContextSchema,
+} from './request-context.ts';
 export type { SessionLike } from './session.ts';
 export { type AgentSession, sessionFromRequestContext } from './session-context.ts';
 export type { SubscriberBuilder, SubscriberBuilderDeps } from './subscriber-builder.ts';
@@ -63,3 +74,18 @@ export type {
 } from './tool.ts';
 export type { WorkflowBuilder } from './workflow-builder.ts';
 export type { WorkflowContribution } from './workflow-contribution.ts';
+export {
+  type ConversationEntities,
+  ConversationEntitiesSchema,
+  EMPTY_ENTITIES,
+  EMPTY_WORKING_MEMORY,
+  parseEntities,
+  parseWorkingMemory,
+  type RecentTask,
+  RecentTaskSchema,
+  serializeEntities,
+  serializeWorkingMemory,
+  type WorkingMemory,
+  WorkingMemorySchema,
+  WorkingMemoryUserContextSchema,
+} from './working-memory-schema.ts';

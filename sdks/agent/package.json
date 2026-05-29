@@ -21,10 +21,12 @@
   },
   "dependencies": {
     "@mastra/core": "^1.37.0",
+    "@mastra/memory": "^1.20.0",
     "@seta/shared-embeddings": "workspace:^",
     "@seta/shared-rbac": "workspace:^",
     "@seta/shared-retrieval": "workspace:^",
     "@seta/shared-types": "workspace:^",
+    "async-mutex": "^0.5.0",
     "pg": "^8.21.0",
     "zod": "^4.4.3"
   }

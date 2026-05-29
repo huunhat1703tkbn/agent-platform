@@ -87,7 +87,7 @@ describe('planner_getTask — pendingAssignWorkflowRunId', () => {
       const task = await createTask({ plan_id: plan.id, title: 'T', session });
 
       const result = (await plannerGetTaskTool.execute!(
-        { taskId: task.id },
+        { taskRef: task.id },
         makeToolContext({ user_id: admin_user_id, tenant_id }),
       )) as { task: { pendingAssignWorkflowRunId: string | null } };
 
@@ -121,7 +121,7 @@ describe('planner_getTask — pendingAssignWorkflowRunId', () => {
       });
 
       const result = (await plannerGetTaskTool.execute!(
-        { taskId: task.id },
+        { taskRef: task.id },
         makeToolContext({ user_id: admin_user_id, tenant_id }),
       )) as { task: { pendingAssignWorkflowRunId: string | null } };
 
@@ -157,7 +157,7 @@ describe('planner_getTask — pendingAssignWorkflowRunId', () => {
       });
 
       const result = (await plannerGetTaskTool.execute!(
-        { taskId: task.id },
+        { taskRef: task.id },
         makeToolContext({ user_id: admin_user_id, tenant_id }),
       )) as { task: { pendingAssignWorkflowRunId: string | null } };
 
@@ -196,7 +196,7 @@ describe('planner_getTask — pendingAssignWorkflowRunId', () => {
       );
 
       const result = (await plannerGetTaskTool.execute!(
-        { taskId: task.id },
+        { taskRef: task.id },
         makeToolContext({ user_id: admin_user_id, tenant_id }),
       )) as { task: { pendingAssignWorkflowRunId: string | null } };
 
@@ -235,7 +235,7 @@ describe('planner_getTask — pendingAssignWorkflowRunId', () => {
       );
 
       const result = (await plannerGetTaskTool.execute!(
-        { taskId: task.id },
+        { taskRef: task.id },
         makeToolContext({ user_id: admin_user_id, tenant_id }),
       )) as { task: { pendingAssignWorkflowRunId: string | null } };
 

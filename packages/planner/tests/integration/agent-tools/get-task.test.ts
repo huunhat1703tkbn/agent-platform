@@ -55,7 +55,7 @@ describe('planner_getTask tool', () => {
       });
 
       const result = (await plannerGetTaskTool.execute!(
-        { taskId: task.id },
+        { taskRef: task.id },
         makeToolContext({ user_id: admin_user_id, tenant_id }),
       )) as {
         task: {
@@ -86,7 +86,7 @@ describe('planner_getTask tool', () => {
       const { admin_user_id, tenant_id } = await createTestTenantWithAdmin({ pool });
       await expect(
         plannerGetTaskTool.execute!(
-          { taskId: crypto.randomUUID() },
+          { taskRef: crypto.randomUUID() },
           makeToolContext({ user_id: admin_user_id, tenant_id }),
         ),
       ).rejects.toThrow();

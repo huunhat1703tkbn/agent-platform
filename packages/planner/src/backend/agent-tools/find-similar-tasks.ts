@@ -1,5 +1,5 @@
 import type { PgVector } from '@mastra/pg';
-import { actorFromContext, defineAgentTool } from '@seta/agent-sdk';
+import { actorFromContext, defineAgentTool, recordEntityExposure } from '@seta/agent-sdk';
 import { buildActorSession } from '@seta/identity';
 import type { EmbeddingProvider } from '@seta/shared-embeddings';
 import { z } from 'zod';
@@ -77,7 +77,7 @@ export function plannerFindSimilarTasksTool(deps: PlannerFindSimilarTasksToolDep
             })());
 
       const now = new Date();
-      return findSimilarTasks(
+      const result = await findSimilarTasks(
         {
           tenant_id: session.tenant_id,
           text: input.text,
@@ -93,6 +93,12 @@ export function plannerFindSimilarTasksTool(deps: PlannerFindSimilarTasksToolDep
         },
         { provider: deps.provider, pgVector },
       );
+
+      await recordEntityExposure(ctx as never, {
+        recentTasks: result.results.map((r) => ({ taskId: r.taskId, title: r.title })),
+      });
+
+      return result;
     },
   });
 }
