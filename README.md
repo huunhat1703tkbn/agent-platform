@@ -170,7 +170,7 @@ For the full step-by-step sequence — request ingestion, RBAC, specialist deleg
 ```mermaid
 graph TD
     subgraph Public["Browser"]
-        DNS["your_team.ai-hackathon.seta-international.com"]
+        DNS["your_team.hackathon.seta-international.com"]
     end
 
     subgraph Docker["AWS EC2"]
@@ -189,9 +189,4 @@ graph TD
     Docker -->|Secure Asset Sync| S3
 ```
 
-### Deployment Pipeline
-
-1. **Fork & Configure:** Fork the repository to your team workspace and configure production secrets (database URLs, LLM API keys, and session tokens).
-2. **Build & Push to ECR:** Build the root multi-stage Dockerfile (frontend static assets build and backend compilation bundle) and push the image to your dedicated AWS ECR repository.
-3. **Deploy to EC2:** SSH into your assigned AWS EC2 instance, pull the fresh image from ECR, and restart the container (structural migrations run automatically on container startup). Configure static assets to map to AWS S3.
-4. **Verify Route:** Access your live environment via your team-specific endpoint: `<your_team>.ai-hackathon.seta-international.com`
+For the full deployment walkthrough — CI/CD setup, secrets configuration, ECR push, EC2 deployment, and troubleshooting — see **[`hackathon/DEPLOY.md`](hackathon/DEPLOY.md)**.
