@@ -1,3 +1,4 @@
+import { InMemoryStore } from '@mastra/core/storage';
 import { SpecializedAgentRegistry } from '@seta/agent-sdk';
 import { type OrchestrationEvent, OrchestrationRegistry } from '@seta/shared-orchestration';
 import { MockLanguageModelV3 } from 'ai/test';
@@ -18,7 +19,7 @@ import { withAgentTestDb } from '../../helpers.ts';
 const TENANT = '00000000-0000-4000-8000-0000000000b9';
 const ACTOR = '00000000-0000-4000-8000-0000000000c9';
 const RUN = '00000000-0000-4000-8000-0000000000d9';
-// callTaskAnalyzer's taskRef must be a real UUID (or an in-conversation
+// staffing_analyzeTasks's taskRef must be a real UUID (or an in-conversation
 // ordinal — but the inline runner has no conversation memory to resolve
 // ordinals against). The taskReader port stub ignores the id it is given.
 const TASK_REF = '00000000-0000-4000-8000-0000000000e9';
@@ -36,6 +37,28 @@ function toolCallStep(k: number, toolName: string, input: unknown): Step {
     finishReason: 'tool-calls',
   };
 }
+// doStream mirrors doGenerate: same call counter, same Step sequence converted
+// to AI SDK v6 stream parts so the streaming orchestrator path is exercised.
+function stepToStreamParts(s: Step) {
+  const parts: Record<string, unknown>[] = [{ type: 'stream-start', warnings: [] }];
+  for (const c of s.content) {
+    if (c.type === 'tool-call') {
+      parts.push({
+        type: 'tool-call',
+        toolCallId: (c as Record<string, unknown>).toolCallId,
+        toolName: (c as Record<string, unknown>).toolName,
+        input: (c as Record<string, unknown>).input,
+      });
+    } else if (c.type === 'text') {
+      parts.push({ type: 'text-start', id: '0' });
+      parts.push({ type: 'text-delta', id: '0', delta: (c as Record<string, unknown>).text });
+      parts.push({ type: 'text-end', id: '0' });
+    }
+  }
+  parts.push({ type: 'finish', usage, finishReason: s.finishReason });
+  return parts;
+}
+
 function scriptedModel(steps: Step[]) {
   let call = -1;
   return new MockLanguageModelV3({
@@ -48,6 +71,20 @@ function scriptedModel(steps: Step[]) {
         usage,
         content: s.content,
         warnings: [],
+      } as never;
+    },
+    doStream: async () => {
+      call += 1;
+      const s = steps[Math.min(call, steps.length - 1)] ?? STOP;
+      const parts = stepToStreamParts(s);
+      return {
+        stream: new ReadableStream({
+          start(controller) {
+            for (const p of parts) controller.enqueue(p);
+            controller.close();
+          },
+        }),
+        rawCall: { rawPrompt: null, rawSettings: {} },
       } as never;
     },
   });
@@ -87,6 +124,7 @@ const portsWith = () => ({
     inProgressCount: async () => 0,
   },
   userProfileLookup: { findByName: async () => [] },
+  assign: { assign: async () => {} },
 });
 
 afterEach(() => {
@@ -113,20 +151,27 @@ describe('orchestrator inline run (e2e)', () => {
       // built first at run start; skillMatcher's Agent only when delegated to.
       // taskAnalyzer + avaiChecker are deterministic here (no model call).
       const rt = buildStaffingOrchestrationRuntime({
+        mastraStorage: new InMemoryStore(),
         repo: new StaffingRunStateRepository(),
         resolveModel: resolveModelSeq([
           // orchestrator: chain the four delegations. taskAnalyzer is deterministic
           // (resolve_task_skills reads the task's skillTags=['aws'] via the port);
-          // callAvaiChecker runs the deterministic avaiChecker against the ports.
+          // staffing_checkCandidateAvailability runs the deterministic avaiChecker against the ports.
           scriptedModel([
-            toolCallStep(0, 'callTaskAnalyzer', {
+            toolCallStep(0, 'staffing_analyzeTasks', {
               intent: 'resolve_task_skills',
               query: 'who should do this',
               taskRef: TASK_REF,
             }),
-            toolCallStep(1, 'callSkillMatcher', { taskId: 'task-1', skills: ['aws'] }),
-            toolCallStep(2, 'callAvaiChecker', { taskId: 'task-1', candidates: [CANDIDATE] }),
-            toolCallStep(3, 'callRecommender', {
+            toolCallStep(1, 'staffing_matchCandidatesBySkill', {
+              taskId: 'task-1',
+              skills: ['aws'],
+            }),
+            toolCallStep(2, 'staffing_checkCandidateAvailability', {
+              taskId: 'task-1',
+              candidates: [CANDIDATE],
+            }),
+            toolCallStep(3, 'staffing_rankRecommendations', {
               taskId: 'task-1',
               skills: ['aws'],
               candidates: [CANDIDATE],
@@ -143,7 +188,7 @@ describe('orchestrator inline run (e2e)', () => {
             STOP,
           ]),
           // skillMatcher: searchCandidates; run() ranks the hits via fallback.
-          scriptedModel([toolCallStep(0, 'searchCandidates', { skills: ['aws'] }), STOP]),
+          scriptedModel([toolCallStep(0, 'staffing_searchCandidates', { skills: ['aws'] }), STOP]),
         ]),
         ports: portsWith(),
       });
@@ -188,12 +233,13 @@ describe('orchestrator inline run (e2e)', () => {
     await withAgentTestDb(async () => {
       __setStaffingRunIdForTests(() => RUN);
       const rt = buildStaffingOrchestrationRuntime({
+        mastraStorage: new InMemoryStore(),
         repo: new StaffingRunStateRepository(),
         resolveModel: resolveModelSeq([
           // Only the orchestrator resolves a model — skillMatcher is never
           // delegated to, so its (lazy) Agent is never built.
           scriptedModel([
-            toolCallStep(0, 'callTaskAnalyzer', {
+            toolCallStep(0, 'staffing_analyzeTasks', {
               intent: 'resolve_task_skills',
               query: 'what skills does this need',
               taskRef: TASK_REF,
@@ -227,19 +273,99 @@ describe('orchestrator inline run (e2e)', () => {
     });
   });
 
+  it('runStream recommend path: streams OrchestrationEvents ending in final, no DB persistence', async () => {
+    await withAgentTestDb(async () => {
+      const rt = buildStaffingOrchestrationRuntime({
+        mastraStorage: new InMemoryStore(),
+        repo: new StaffingRunStateRepository(),
+        resolveModel: resolveModelSeq([
+          // orchestrator: driven via Agent.stream() → doStream; same delegation
+          // sequence as the inline recommend test.
+          scriptedModel([
+            toolCallStep(0, 'staffing_analyzeTasks', {
+              intent: 'resolve_task_skills',
+              query: 'who should do this',
+              taskRef: TASK_REF,
+            }),
+            toolCallStep(1, 'staffing_matchCandidatesBySkill', {
+              taskId: 'task-1',
+              skills: ['aws'],
+            }),
+            toolCallStep(2, 'staffing_checkCandidateAvailability', {
+              taskId: 'task-1',
+              candidates: [CANDIDATE],
+            }),
+            toolCallStep(3, 'staffing_rankRecommendations', {
+              taskId: 'task-1',
+              skills: ['aws'],
+              candidates: [CANDIDATE],
+              availability: [
+                {
+                  userId: 'u1',
+                  name: 'A',
+                  status: 'available',
+                  inProgressCount: 0,
+                  availabilityScore: 1,
+                },
+              ],
+            }),
+            STOP,
+          ]),
+          // skillMatcher: still uses doGenerate (sub-agents call .generate()).
+          scriptedModel([toolCallStep(0, 'staffing_searchCandidates', { skills: ['aws'] }), STOP]),
+        ]),
+        ports: portsWith(),
+      });
+      SpecializedAgentRegistry.freeze();
+      OrchestrationRegistry.freeze();
+
+      const events: OrchestrationEvent[] = [];
+      for await (const e of rt.runStream(
+        { userText: 'go', taskId: 'task-1' },
+        { tenantId: TENANT, actorUserId: ACTOR },
+      )) {
+        events.push(e);
+      }
+
+      const final = events.at(-1) as {
+        kind: 'final';
+        result: { recommendations?: { userId: string }[] };
+      };
+      expect(final.kind).toBe('final');
+      expect(final.result.recommendations?.[0]?.userId).toBe('u1');
+
+      const started = events
+        .filter(
+          (e): e is Extract<OrchestrationEvent, { kind: 'step-start' }> => e.kind === 'step-start',
+        )
+        .map((e) => e.stepId);
+      expect(started).toContain('taskAnalyzer');
+      expect(started).toContain('skillMatcher:task-1');
+      expect(started).toContain('avaiChecker:task-1');
+      expect(started).toContain('recommender:task-1');
+    });
+  });
+
   it('task-less people search: recommends with a null taskId (Agent Studio, no task context)', async () => {
     await withAgentTestDb(async () => {
       __setStaffingRunIdForTests(() => RUN);
       const rt = buildStaffingOrchestrationRuntime({
+        mastraStorage: new InMemoryStore(),
         repo: new StaffingRunStateRepository(),
         resolveModel: resolveModelSeq([
           // orchestrator (resolved first, at run start): people-by-named-skills
           // with NO task → taskId is null through the whole recommend chain
           // (the taskId is only a correlation label).
           scriptedModel([
-            toolCallStep(0, 'callSkillMatcher', { taskId: null, skills: ['aws', 'docker'] }),
-            toolCallStep(1, 'callAvaiChecker', { taskId: null, candidates: [CANDIDATE] }),
-            toolCallStep(2, 'callRecommender', {
+            toolCallStep(0, 'staffing_matchCandidatesBySkill', {
+              taskId: null,
+              skills: ['aws', 'docker'],
+            }),
+            toolCallStep(1, 'staffing_checkCandidateAvailability', {
+              taskId: null,
+              candidates: [CANDIDATE],
+            }),
+            toolCallStep(2, 'staffing_rankRecommendations', {
               taskId: null,
               skills: ['aws', 'docker'],
               candidates: [CANDIDATE],
@@ -256,7 +382,10 @@ describe('orchestrator inline run (e2e)', () => {
             STOP,
           ]),
           // skillMatcher: searchCandidates by the named skills; run() ranks via fallback.
-          scriptedModel([toolCallStep(0, 'searchCandidates', { skills: ['aws', 'docker'] }), STOP]),
+          scriptedModel([
+            toolCallStep(0, 'staffing_searchCandidates', { skills: ['aws', 'docker'] }),
+            STOP,
+          ]),
         ]),
         ports: portsWith(),
       });

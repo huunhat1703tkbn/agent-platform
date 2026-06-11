@@ -1,7 +1,11 @@
+import type { OrchestrationEvent } from '@seta/shared-orchestration';
 import { createUIMessageStream, createUIMessageStreamResponse, type UIMessage } from 'ai';
 import type { Hono } from 'hono';
 import { z } from 'zod';
-import { makeAssignApprovalRecorder } from '../domain/make-assign-approval-recorder.ts';
+import {
+  PendingAssignmentExistsError,
+  writeChatApprovalRow,
+} from '../domain/write-chat-approval-row.ts';
 import { agentEnv } from '../env.ts';
 import { ModelNotFoundError, resolveModel } from '../model-registry.ts';
 import { streamOrchestrationToUI } from '../orchestration-chat-stream.ts';
@@ -193,13 +197,41 @@ export function mountChatRoute(app: Hono<AgentRouteEnv>, deps: AgentRouteDeps): 
     const orchThreadTitle = (cleanUserText || userText).slice(0, 80) || 'New conversation';
 
     const tenantSettings = await getTenantSettings(session.tenant_id);
-    const recordHitlApproval = makeAssignApprovalRecorder({
-      tenantId: session.tenant_id,
-      userId: session.user_id,
-      threadId: orchThreadId ?? null,
-      pool: deps.pool,
-      approvalTtlHours: tenantSettings.approvalTtlHours,
-    });
+    // Native-suspend HITL: when the orchestration run suspends, project the
+    // approval read-model row so the pending-approvals poll renders the card.
+    const onApproval = async (
+      ev: Extract<OrchestrationEvent, { kind: 'approval' }>,
+    ): Promise<void> => {
+      try {
+        await writeChatApprovalRow({
+          card: ev.card,
+          mastraRunId: ev.mastraRunId,
+          toolCallId: ev.toolCallId,
+          threadId: orchThreadId ?? null,
+          tenantId: session.tenant_id,
+          userId: session.user_id,
+          pool: deps.pool,
+          approvalTtlHours: tenantSettings.approvalTtlHours,
+        });
+      } catch (err) {
+        if (err instanceof PendingAssignmentExistsError) {
+          // Expected race: an evented assignBySkill run is in flight for this
+          // task but hasn't reached its suspend step yet. The existing proposal
+          // stands — no competing card needed. Fail open; don't break the turn.
+          return;
+        }
+        // Read-model write failure must not abort the chat turn.
+        (deps.log?.error ?? console.error)(
+          {
+            subsystem: 'agent.chat',
+            event: 'onApproval.write.failed',
+            threadId: orchThreadId,
+            err,
+          },
+          'failed to write chat approval row — continuing turn',
+        );
+      }
+    };
 
     // Create the thread row up front so a GET on the returned threadId never 404s
     // mid-stream. The ownership guard: never write onto another user's thread.
@@ -275,7 +307,6 @@ export function mountChatRoute(app: Hono<AgentRouteEnv>, deps: AgentRouteDeps): 
               tenantId: session.tenant_id,
               actorUserId: session.user_id,
               effectivePermissions: session.effective_permissions,
-              recordHitlApproval,
               threadId: orchThreadId,
               entitiesMemory:
                 deps.entitiesMemory && deps.entitiesMemoryConfig
@@ -288,6 +319,7 @@ export function mountChatRoute(app: Hono<AgentRouteEnv>, deps: AgentRouteDeps): 
               model: modelOverride,
             },
           ),
+          { onApproval },
         );
         // Persist the user turn + assistant trace timeline so the conversation
         // survives reload (GET /threads/:id rebuilds the cards + final answer).

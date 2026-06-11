@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import type { ApprovalCard } from '@seta/agent-sdk';
 import { describe, expect, it } from 'vitest';
+import { getPendingAssignRunIdForTask } from '../../src/backend/domain/get-pending-assign-run-for-task.ts';
 import {
-  makeAssignApprovalRecorder,
   PendingAssignmentExistsError,
-} from '../../src/backend/domain/make-assign-approval-recorder.ts';
+  writeChatApprovalRow,
+} from '../../src/backend/domain/write-chat-approval-row.ts';
 import { withAgentTestDb } from '../helpers.ts';
 
 function card(taskId: string, tenantId: string, userId: string): ApprovalCard {
@@ -35,56 +36,97 @@ function card(taskId: string, tenantId: string, userId: string): ApprovalCard {
   };
 }
 
-describe('makeAssignApprovalRecorder', () => {
-  it('inserts the synthetic run + pending approval on first call', async () => {
+describe('writeChatApprovalRow', () => {
+  it('inserts both rows with the agentic run id + tool-call id and the native workflow_id', async () => {
     await withAgentTestDb(async ({ pool }) => {
       const tenantId = randomUUID();
       const userId = randomUUID();
       const taskId = randomUUID();
-      const recorder = makeAssignApprovalRecorder({
+
+      const result = await writeChatApprovalRow({
+        card: card(taskId, tenantId, userId),
+        mastraRunId: 'mastra-run-1',
+        toolCallId: 'tool-call-1',
+        threadId: 'thread-1',
         tenantId,
         userId,
-        threadId: 'thread-1',
         pool,
       });
 
-      const ids = await recorder(card(taskId, tenantId, userId));
-
+      expect(result.cardInThread).toBe(true);
       const runs = await pool.query(
-        `SELECT workflow_id, status FROM agent.workflow_runs WHERE run_id = $1`,
-        [ids.runId],
+        `SELECT workflow_id, status, started_via FROM agent.workflow_runs WHERE run_id = $1`,
+        [result.runId],
       );
       expect(runs.rows[0]).toEqual({
-        workflow_id: '__chat_hitl:planner_proposeAssignment',
+        workflow_id: 'staffing.orchestrator',
         status: 'paused',
+        started_via: 'chat',
       });
       const approvals = await pool.query(
-        `SELECT status, surface_chat_thread_id FROM agent.workflow_approvals WHERE approval_id = $1`,
-        [ids.approvalId],
+        `SELECT step_id, status, surface_canvas, surface_chat_thread_id, mastra_run_id, tool_call_id
+           FROM agent.workflow_approvals WHERE approval_id = $1`,
+        [result.approvalId],
       );
       expect(approvals.rows[0]).toEqual({
+        step_id: 'chat-hitl',
         status: 'pending',
+        surface_canvas: false,
         surface_chat_thread_id: 'thread-1',
+        mastra_run_id: 'mastra-run-1',
+        tool_call_id: 'tool-call-1',
       });
     });
   });
 
-  it('is idempotent per task: the second call returns the existing approval, no duplicate row', async () => {
+  it('getPendingAssignRunIdForTask finds the native-suspend row', async () => {
     await withAgentTestDb(async ({ pool }) => {
       const tenantId = randomUUID();
       const userId = randomUUID();
       const taskId = randomUUID();
-      const recorder = makeAssignApprovalRecorder({
+
+      const result = await writeChatApprovalRow({
+        card: card(taskId, tenantId, userId),
+        mastraRunId: 'mastra-run-1',
+        toolCallId: 'tool-call-1',
+        threadId: 'thread-1',
         tenantId,
         userId,
-        threadId: 'thread-1',
         pool,
       });
 
-      const first = await recorder(card(taskId, tenantId, userId));
-      const second = await recorder(card(taskId, tenantId, userId));
+      const found = await getPendingAssignRunIdForTask({ taskId, tenantId });
+      expect(found).toBe(result.runId);
+    });
+  });
 
-      expect(second).toEqual(first);
+  it('is idempotent per task: a second call returns the existing approval, no duplicate row', async () => {
+    await withAgentTestDb(async ({ pool }) => {
+      const tenantId = randomUUID();
+      const userId = randomUUID();
+      const taskId = randomUUID();
+
+      const first = await writeChatApprovalRow({
+        card: card(taskId, tenantId, userId),
+        mastraRunId: 'mastra-run-1',
+        toolCallId: 'tool-call-1',
+        threadId: 'thread-1',
+        tenantId,
+        userId,
+        pool,
+      });
+      const second = await writeChatApprovalRow({
+        card: card(taskId, tenantId, userId),
+        mastraRunId: 'mastra-run-2',
+        toolCallId: 'tool-call-2',
+        threadId: 'thread-1',
+        tenantId,
+        userId,
+        pool,
+      });
+
+      expect(second.runId).toBe(first.runId);
+      expect(second.approvalId).toBe(first.approvalId);
       const count = await pool.query(
         `SELECT count(*)::int AS n
            FROM agent.workflow_approvals a
@@ -96,25 +138,30 @@ describe('makeAssignApprovalRecorder', () => {
     });
   });
 
-  it('rebinds the pending approval to the new thread when the same approver re-asks elsewhere', async () => {
+  it('rebinds the pending approval to a new thread when the same approver re-asks elsewhere', async () => {
     await withAgentTestDb(async ({ pool }) => {
       const tenantId = randomUUID();
       const userId = randomUUID();
       const taskId = randomUUID();
-      const first = await makeAssignApprovalRecorder({
-        tenantId,
-        userId,
-        threadId: 'thread-1',
-        pool,
-      })(card(taskId, tenantId, userId));
 
-      // Same user asks about the same task from a brand-new chat thread.
-      const second = await makeAssignApprovalRecorder({
+      const first = await writeChatApprovalRow({
+        card: card(taskId, tenantId, userId),
+        mastraRunId: 'mastra-run-1',
+        toolCallId: 'tool-call-1',
+        threadId: 'thread-1',
         tenantId,
         userId,
-        threadId: 'thread-2',
         pool,
-      })(card(taskId, tenantId, userId));
+      });
+      const second = await writeChatApprovalRow({
+        card: card(taskId, tenantId, userId),
+        mastraRunId: 'mastra-run-2',
+        toolCallId: 'tool-call-2',
+        threadId: 'thread-2',
+        tenantId,
+        userId,
+        pool,
+      });
 
       expect(second.approvalId).toBe(first.approvalId);
       expect(second.cardInThread).toBe(true);
@@ -132,21 +179,25 @@ describe('makeAssignApprovalRecorder', () => {
       const approver = randomUUID();
       const otherUser = randomUUID();
       const taskId = randomUUID();
-      const first = await makeAssignApprovalRecorder({
+
+      const first = await writeChatApprovalRow({
+        card: card(taskId, tenantId, approver),
+        mastraRunId: 'mastra-run-1',
+        toolCallId: 'tool-call-1',
+        threadId: 'thread-1',
         tenantId,
         userId: approver,
-        threadId: 'thread-1',
         pool,
-      })(card(taskId, tenantId, approver));
-
-      // A different user asks about the same task: the existing card stays in
-      // the approver's thread — claiming "card above" here would be a lie.
-      const second = await makeAssignApprovalRecorder({
+      });
+      const second = await writeChatApprovalRow({
+        card: card(taskId, tenantId, otherUser),
+        mastraRunId: 'mastra-run-2',
+        toolCallId: 'tool-call-2',
+        threadId: 'thread-2',
         tenantId,
         userId: otherUser,
-        threadId: 'thread-2',
         pool,
-      })(card(taskId, tenantId, otherUser));
+      });
 
       expect(second.approvalId).toBe(first.approvalId);
       expect(second.cardInThread).toBe(false);
@@ -174,36 +225,18 @@ describe('makeAssignApprovalRecorder', () => {
          VALUES (gen_random_uuid(), 'planner.assignBySkill', $1, $2, 'event', $3::jsonb, 'running')`,
         [tenantId, randomUUID(), JSON.stringify({ taskId })],
       );
-      const recorder = makeAssignApprovalRecorder({
-        tenantId,
-        userId,
-        threadId: 'thread-1',
-        pool,
-      });
 
-      await expect(recorder(card(taskId, tenantId, userId))).rejects.toBeInstanceOf(
-        PendingAssignmentExistsError,
-      );
-    });
-  });
-
-  it('a card without a taskId argsPatch inserts without the mutex check (defensive path)', async () => {
-    await withAgentTestDb(async ({ pool }) => {
-      const tenantId = randomUUID();
-      const userId = randomUUID();
-      const recorder = makeAssignApprovalRecorder({
-        tenantId,
-        userId,
-        threadId: null,
-        pool,
-      });
-      const c = card(randomUUID(), tenantId, userId);
-      c.primary.argsPatch = { action: 'assign', assigneeUserIds: ['u1'] }; // no taskId
-
-      const ids = await recorder(c);
-
-      expect(ids.runId).toBeTruthy();
-      expect(ids.approvalId).toBeTruthy();
+      await expect(
+        writeChatApprovalRow({
+          card: card(taskId, tenantId, userId),
+          mastraRunId: 'mastra-run-race',
+          toolCallId: 'tool-call-race',
+          threadId: 'thread-race',
+          tenantId,
+          userId,
+          pool,
+        }),
+      ).rejects.toBeInstanceOf(PendingAssignmentExistsError);
     });
   });
 });

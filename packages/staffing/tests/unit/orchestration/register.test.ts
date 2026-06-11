@@ -1,7 +1,9 @@
+import { InMemoryStore } from '@mastra/core/storage';
 import { SpecializedAgentRegistry } from '@seta/agent-sdk';
 import { ORCH_JOBS, OrchestrationRegistry } from '@seta/shared-orchestration';
 import { afterEach, describe, expect, it } from 'vitest';
 import type {
+  AssignPort,
   AvailabilityPort,
   SkillSearchPort,
   TaskReaderPort,
@@ -22,6 +24,7 @@ const fakePorts = {
     inProgressCount: async () => 0,
   } satisfies AvailabilityPort,
   userProfileLookup: { findByName: async () => [] } satisfies UserProfilePort,
+  assign: { assign: async () => {} } satisfies AssignPort,
 };
 
 afterEach(() => {
@@ -35,6 +38,7 @@ describe('buildStaffingOrchestrationRuntime', () => {
       ports: fakePorts,
       resolveModel: () => ({}) as never,
       repo: {} as never,
+      mastraStorage: new InMemoryStore(),
     });
     SpecializedAgentRegistry.freeze();
     OrchestrationRegistry.freeze();

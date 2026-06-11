@@ -2,10 +2,10 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Mastra } from '@mastra/core';
 import { Agent } from '@mastra/core/agent';
+import type { MastraCompositeStore } from '@mastra/core/storage';
 import type { AnyWorkflow } from '@mastra/core/workflows';
 import {
   AgentRegistry,
-  type ChatHitlDecider,
   registerPendingAssignReader,
   setBreakerConfig,
   setBreakerEventEmitter,
@@ -60,21 +60,23 @@ export function buildAgentFromSpec(spec: AgentSpec, opts: { model?: unknown } = 
   });
 }
 
+export { createAgentMastraStorage } from './backend/runtime.ts';
+
 export function registerAgent(deps: {
   pool: Pool;
   databaseUrl: string;
   reg: ContributionRegistry;
+  /**
+   * Pre-built store, forwarded to buildMastraFull so the engine Mastra reuses
+   * the same instance the staffing orchestrator's per-turn Mastra wraps —
+   * cross-instance native-suspend resume requires ONE shared store. Built once
+   * at the composition root via createAgentMastraStorage.
+   */
+  mastraStorage?: MastraCompositeStore;
   log?: {
     error: (obj: unknown, msg?: string) => void;
     warn: (obj: unknown, msg?: string) => void;
   };
-  /**
-   * Per-tool-ID handlers for chat-flow HITL decisions.
-   * Populated by the server entry-point (apps/server/src/index.ts) — the only
-   * layer that can import from both the agent engine and feature modules.
-   * See packages/agent/src/backend/routes.ts AgentRouteDeps.chatHitlDeciders.
-   */
-  chatHitlDeciders?: Record<string, ChatHitlDecider>;
   /**
    * The chat runtime: every chat turn streams through this inline staffing
    * orchestration. Injected by the server entry-point (the only layer that can
@@ -84,6 +86,12 @@ export function registerAgent(deps: {
     runInput: { userText: string; taskId: string | null },
     ctx: import('@seta/shared-orchestration').RunCtx,
   ) => AsyncIterable<import('@seta/shared-orchestration').OrchestrationEvent>;
+  /**
+   * Resume runtime for native-suspend agentic chat-HITL runs. Injected by the
+   * server entry-point as the staffing runtime's `runResume`. See
+   * AgentRouteDeps.resumeOrchestration.
+   */
+  resumeOrchestration?: import('./backend/routes.ts').AgentRouteDeps['resumeOrchestration'];
   /**
    * Chat-attachment consume/mark functions, injected by the server entry-point
    * from @seta/knowledge (the only layer that can import a feature module into
@@ -109,6 +117,7 @@ export function registerAgent(deps: {
     pool: deps.pool,
     databaseUrl: deps.databaseUrl,
     log: deps.log,
+    storage: deps.mastraStorage,
   });
 
   for (const spec of deps.reg.collected.agentSpecs) {
@@ -153,8 +162,8 @@ export function registerAgent(deps: {
         drainer,
         pool: deps.pool,
         log: deps.log,
-        chatHitlDeciders: deps.chatHitlDeciders,
         chatOrchestration: deps.chatOrchestration,
+        resumeOrchestration: deps.resumeOrchestration,
         consumeThreadAttachments: deps.consumeThreadAttachments,
         markAttachmentsConsumed: deps.markAttachmentsConsumed,
         markAttachmentsFailed: deps.markAttachmentsFailed,

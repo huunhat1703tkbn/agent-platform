@@ -1,6 +1,5 @@
 import type { MemoryConfig } from '@mastra/core/memory';
 import type { Memory } from '@mastra/memory';
-import type { ChatHitlDecider } from '@seta/agent-sdk';
 import type { Context } from 'hono';
 import type { Pool } from 'pg';
 import { ORCHESTRATION_STEP_PART } from '../orchestration-chat-stream.ts';
@@ -21,19 +20,6 @@ export type AgentRouteDeps = {
     error: (obj: unknown, msg?: string) => void;
     warn: (obj: unknown, msg?: string) => void;
   };
-  /**
-   * Per-tool-ID handlers for chat-flow HITL decisions.
-   *
-   * When a chat-flow tool uses ChatHitlRecorder to create a workflow_approvals
-   * row (synthetic workflow_id = '__chat_hitl:<toolId>'), the decide-approval
-   * endpoint calls the matching handler here to execute the domain action
-   * directly — no Mastra workflow resume is needed or possible for chat HITL.
-   *
-   * Keyed by toolId (e.g. 'planner_proposeAssignment'). Populated by the
-   * server entry-point, which is the only layer allowed to import from both
-   * packages/agent (engine) and feature modules like packages/planner.
-   */
-  chatHitlDeciders?: Record<string, ChatHitlDecider>;
   /**
    * Thread-scoped conversation-entities Memory + its MemoryConfig. Injected
    * into requestContext under RC_AGENT_MEMORY by the chat route so tools can do
@@ -61,6 +47,24 @@ export type AgentRouteDeps = {
   chatOrchestration: (
     runInput: { userText: string; taskId: string | null },
     ctx: import('@seta/shared-orchestration').RunCtx,
+  ) => AsyncIterable<import('@seta/shared-orchestration').OrchestrationEvent>;
+  /**
+   * Resumes a suspended native-suspend agentic chat-HITL run. Injected by the
+   * composition root (apps/server) as the staffing runtime's `runResume`. The
+   * structural type avoids an `agent → staffing` import (depcruise-forbidden);
+   * staffing's concrete `runResume` is structurally assignable.
+   */
+  resumeOrchestration?: (
+    resume: {
+      decision: 'approve' | 'reject' | 'modify';
+      overrideUserIds?: string[];
+      alternateIndices?: number[];
+      note?: string;
+    },
+    ctx: import('@seta/shared-orchestration').RunCtx & {
+      mastraRunId: string;
+      toolCallId?: string;
+    },
   ) => AsyncIterable<import('@seta/shared-orchestration').OrchestrationEvent>;
   /** Injected by apps/server from @seta/knowledge (the agent package may not
    *  import feature modules). Reads + parses the thread's pending attachments,
@@ -221,6 +225,7 @@ export function handleDomainError(c: Context<AgentRouteEnv>, err: unknown): Resp
     if (code === 'forbidden') return c.json({ error: 'forbidden', message }, 403);
     if (code === 'not_found') return c.json({ error: 'not_found', message }, 404);
     if (code === 'already_decided') return c.json({ error: 'already_decided', message }, 409);
+    if (code === 'not_resumable') return c.json({ error: 'not_resumable', message }, 409);
     if (code === 'invalid_cursor') return c.json({ error: 'invalid_cursor', message }, 400);
   }
   throw err;

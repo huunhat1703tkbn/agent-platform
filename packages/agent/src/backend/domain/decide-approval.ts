@@ -1,5 +1,4 @@
 import type { Mastra } from '@mastra/core';
-import { CHAT_HITL_WORKFLOW_ID_PREFIX, type ChatHitlDecider } from '@seta/agent-sdk';
 import { sql } from 'drizzle-orm';
 import { agentDb } from '../db/index.ts';
 import type { SessionLike } from '../types.ts';
@@ -26,15 +25,6 @@ export interface DecideApprovalOpts {
   alternateIndices?: number[];
   note?: string;
   mastra: Mastra;
-  /**
-   * Per-tool-ID handlers for chat-flow HITL decisions.
-   *
-   * When workflow_id starts with CHAT_HITL_WORKFLOW_ID_PREFIX the approval was
-   * created by a chat-flow tool via ChatHitlRecorder. In that case there is no
-   * Mastra workflow to resume — instead, the matching decider here executes the
-   * domain action directly. Populated by AgentRouteDeps.chatHitlDeciders.
-   */
-  chatHitlDeciders?: Record<string, ChatHitlDecider>;
   log?: {
     error: (obj: unknown, msg?: string) => void;
   };
@@ -43,13 +33,36 @@ export interface DecideApprovalOpts {
 export interface DecideApprovalResult {
   runId: string;
   resumed: boolean;
+  /** True for native-suspend agentic chat cards (the row carries mastra_run_id).
+   *  The generic decide route records the decision but does NOT stream-resume;
+   *  agentic cards are continued exclusively via POST /chat/resume. */
+  agentic?: boolean;
 }
 
-interface ApprovalDecisionContext {
+export interface ApprovalDecisionContext {
   runId: string;
   workflowId: string;
   stepId: string;
   proposedPayload: unknown;
+  /** Native-suspend resume parameters (null for evented/chat-HITL approvals). */
+  mastraRunId: string | null;
+  toolCallId: string | null;
+  surfaceChatThreadId: string | null;
+}
+
+/** Inputs to the transactional decision-recording core, shared by the generic
+ *  decide route (decideApproval) and the agentic POST /chat/resume route. */
+export interface RecordApprovalDecisionOpts {
+  session: SessionLike;
+  approvalId: string;
+  decision: 'approve' | 'reject' | 'modify';
+  overrideUserIds?: string[];
+  note?: string;
+  /** When true (the /chat/resume route), require the row to be an agentic
+   *  native-suspend card (mastra_run_id set). Rejected INSIDE the transaction
+   *  before any write, so a misrouted evented row never records a decision it
+   *  can't resume. */
+  requireMastraRun?: boolean;
 }
 
 interface ApprovalCardLike {
@@ -103,12 +116,29 @@ function resumeDataFromDecision(
   return undefined;
 }
 
-export async function decideApproval(opts: DecideApprovalOpts): Promise<DecideApprovalResult> {
+/**
+ * Transactional decision-recording core. Locks the approval row FOR UPDATE,
+ * re-checks tenant + approver authorization + the agent.workflow.approve
+ * permission, writes the decision status/payload, and inserts the
+ * `agent.workflow.approval.decided` outbox event — all in one transaction.
+ *
+ * Shared by:
+ *  • decideApproval (generic decide route) — then runs its post-commit resume.
+ *  • POST /chat/resume (agentic chat cards) — then streams the resume itself,
+ *    reading mastraRunId/toolCallId/surfaceChatThreadId/proposedPayload off the
+ *    returned ctx.
+ *
+ * Throws domain errors with a `code` field: 'forbidden' | 'not_found' |
+ * 'already_decided'.
+ */
+export async function recordApprovalDecision(
+  opts: RecordApprovalDecisionOpts,
+): Promise<ApprovalDecisionContext> {
   if (!opts.session.effective_permissions.has('agent.workflow.approve')) {
     throw Object.assign(new Error('forbidden: agent.workflow.approve'), { code: 'forbidden' });
   }
 
-  const ctx = await agentDb().transaction(async (tx): Promise<ApprovalDecisionContext> => {
+  return agentDb().transaction(async (tx): Promise<ApprovalDecisionContext> => {
     interface Row {
       approval_id: string;
       run_id: string;
@@ -120,11 +150,15 @@ export async function decideApproval(opts: DecideApprovalOpts): Promise<DecideAp
       tenant_id: string;
       workflow_id: string;
       proposed_payload: unknown;
+      mastra_run_id: string | null;
+      tool_call_id: string | null;
+      surface_chat_thread_id: string | null;
     }
     const res = await tx.execute(sql`
       SELECT a.approval_id, a.run_id, a.step_id,
              a.approver_user_id, a.fallback_approver_user_id,
              a.surface_canvas, a.status, a.proposed_payload,
+             a.mastra_run_id, a.tool_call_id, a.surface_chat_thread_id,
              r.tenant_id, r.workflow_id
         FROM agent.workflow_approvals a
         JOIN agent.workflow_runs r ON r.run_id = a.run_id
@@ -150,6 +184,10 @@ export async function decideApproval(opts: DecideApprovalOpts): Promise<DecideAp
       throw Object.assign(new Error('forbidden: not_authorized_for_approval'), {
         code: 'forbidden',
       });
+    }
+
+    if (opts.requireMastraRun && row.mastra_run_id == null) {
+      throw Object.assign(new Error('not_resumable'), { code: 'not_resumable' });
     }
 
     const decisionStatus =
@@ -190,8 +228,29 @@ export async function decideApproval(opts: DecideApprovalOpts): Promise<DecideAp
       workflowId: row.workflow_id,
       stepId: row.step_id,
       proposedPayload: row.proposed_payload,
+      mastraRunId: row.mastra_run_id,
+      toolCallId: row.tool_call_id,
+      surfaceChatThreadId: row.surface_chat_thread_id,
     };
   });
+}
+
+export async function decideApproval(opts: DecideApprovalOpts): Promise<DecideApprovalResult> {
+  const ctx = await recordApprovalDecision({
+    session: opts.session,
+    approvalId: opts.approvalId,
+    decision: opts.decision,
+    overrideUserIds: opts.overrideUserIds,
+    note: opts.note,
+  });
+
+  // ── Agentic native-suspend chat card ─────────────────────────────────────
+  // The row carries mastra_run_id — this approval belongs to a suspended
+  // orchestrator run. The generic decide route only records the decision; the
+  // stream-resume continuation runs exclusively through POST /chat/resume.
+  if (ctx.mastraRunId) {
+    return { runId: ctx.runId, resumed: true, agentic: true };
+  }
 
   const mastraTyped = opts.mastra as unknown as {
     getWorkflow: (id: string) =>
@@ -205,43 +264,6 @@ export async function decideApproval(opts: DecideApprovalOpts): Promise<DecideAp
         }
       | undefined;
   };
-
-  // ── Chat-flow HITL path ──────────────────────────────────────────────────
-  // Approvals with workflow_id starting with CHAT_HITL_WORKFLOW_ID_PREFIX were
-  // created by a tool calling ChatHitlRecorder (not by the evented-workflow
-  // lifecycle hook). There is no Mastra workflow run to resume. Instead, the
-  // registered ChatHitlDecider for the tool executes the domain action directly.
-  if (ctx.workflowId.startsWith(CHAT_HITL_WORKFLOW_ID_PREFIX)) {
-    const toolId = ctx.workflowId.slice(CHAT_HITL_WORKFLOW_ID_PREFIX.length);
-    const decider = opts.chatHitlDeciders?.[toolId];
-    if (decider) {
-      await decider({
-        decision: opts.decision,
-        proposedPayload: ctx.proposedPayload,
-        overrideUserIds: opts.overrideUserIds,
-        note: opts.note,
-        session: { user_id: opts.session.user_id, tenant_id: opts.session.tenant_id },
-      });
-    } else if (opts.log) {
-      opts.log.error(
-        { subsystem: 'agent.decide-approval', toolId, runId: ctx.runId },
-        'no ChatHitlDecider registered for tool — decision recorded but action not executed',
-      );
-    } else {
-      console.error(
-        '[agent.decide-approval] no ChatHitlDecider for',
-        toolId,
-        '— decision recorded but action not executed',
-      );
-    }
-    // Mark the synthetic run as completed so it doesn't appear in active-runs views.
-    await agentDb().execute(sql`
-      UPDATE agent.workflow_runs
-         SET status = 'success', finished_at = now()
-       WHERE run_id = ${ctx.runId}
-    `);
-    return { runId: ctx.runId, resumed: false };
-  }
 
   // ── Evented-workflow HITL path ───────────────────────────────────────────
   const workflow = mastraTyped.getWorkflow(ctx.workflowId);

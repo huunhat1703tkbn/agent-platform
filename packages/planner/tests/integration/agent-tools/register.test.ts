@@ -23,9 +23,11 @@ describe('planner register', () => {
         'planner_findSimilarTasks',
         'planner_getOpenTaskCountForUser',
         'planner_getTask',
-        'planner_proposeAssignment',
+        'planner_listComments',
+        'planner_postComment',
+        'planner_queryTasks',
+        'planner_searchGroupMembersBySkills',
         'planner_setAssignees',
-        'search_users_by_skills',
       ].sort(),
     );
 

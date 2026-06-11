@@ -1,4 +1,5 @@
 import type { MastraModelConfig } from '@mastra/core/llm';
+import type { MastraCompositeStore } from '@mastra/core/storage';
 import { SpecializedAgentRegistry } from '@seta/agent-sdk';
 import {
   type AddJob,
@@ -16,9 +17,15 @@ import {
   makeSkillMatcherAgent,
   makeTaskAnalyzerAgent,
 } from './agents/index.ts';
-import { makeOrchestratorAgent } from './orchestrator.ts';
+import {
+  makeChatOrchestrationResumer,
+  makeChatOrchestrationStreamer,
+  makeOrchestratorAgent,
+  type ResumeDecision,
+} from './orchestrator.ts';
 import { orchestratorSpec } from './orchestrator-spec.ts';
 import type {
+  AssignPort,
   AvailabilityPort,
   SkillSearchPort,
   TaskReaderPort,
@@ -32,6 +39,7 @@ export interface StaffingPorts {
   skillSearch: SkillSearchPort;
   availability: AvailabilityPort;
   userProfileLookup: UserProfilePort;
+  assign: AssignPort;
 }
 
 export interface StaffingOrchestrationRuntime {
@@ -39,6 +47,16 @@ export interface StaffingOrchestrationRuntime {
   runInline: (
     runInput: { userText: string; taskId: string | null },
     ctx: RunCtx,
+  ) => AsyncIterable<OrchestrationEvent>;
+  runStream: (
+    runInput: { userText: string; taskId: string | null },
+    ctx: RunCtx,
+  ) => AsyncIterable<OrchestrationEvent>;
+  /** Resumes a suspended native-suspend orchestrator run (the chat-HITL approval
+   *  continuation). Injected by the app as the agent route's resumeOrchestration. */
+  runResume: (
+    resume: ResumeDecision,
+    ctx: RunCtx & { mastraRunId: string; toolCallId?: string },
   ) => AsyncIterable<OrchestrationEvent>;
   repo: RunStateRepository;
 }
@@ -61,8 +79,15 @@ export function buildStaffingOrchestrationRuntime(deps: {
   ports: StaffingPorts;
   resolveModel: () => MastraModelConfig;
   repo: RunStateRepository;
+  /**
+   * Store the per-turn orchestrator Mastra wraps so its native-suspend snapshot
+   * persists (Task 7's resume reloads it). Injected at the composition root —
+   * staffing does NOT own storage (and cannot import @mastra/pg). The same
+   * instance is shared with the agent engine so cross-Mastra resume works.
+   */
+  mastraStorage: MastraCompositeStore;
 }): StaffingOrchestrationRuntime {
-  const { ports, resolveModel, repo } = deps;
+  const { ports, resolveModel, repo, mastraStorage } = deps;
 
   // Sub-agents are invoked through the orchestrator's tools (direct .run calls),
   // not via the registry, so only the orchestrator agent is registered.
@@ -75,15 +100,18 @@ export function buildStaffingOrchestrationRuntime(deps: {
   const avaiChecker = makeAvaiCheckerAgent({ availability: ports.availability });
   const recommender = makeRecommenderAgent();
   const generalAnswer = makeGeneralAnswerAgent({ resolveModel });
-  const orchestrator = makeOrchestratorAgent({
+  const orchestratorDeps = {
     taskAnalyzer,
     skillMatcher,
     avaiChecker,
     recommender,
     generalAnswer,
     userProfileLookup: ports.userProfileLookup,
+    assign: ports.assign,
     resolveModel,
-  });
+    mastraStorage,
+  };
+  const orchestrator = makeOrchestratorAgent(orchestratorDeps);
 
   SpecializedAgentRegistry.register(orchestrator);
   OrchestrationRegistry.register(orchestratorSpec);
@@ -99,7 +127,10 @@ export function buildStaffingOrchestrationRuntime(deps: {
   const runInline: StaffingOrchestrationRuntime['runInline'] = (runInput, ctx) =>
     runOrchestrationInline('staffing.orchestrator', runInput, ctx, { ...runnerDeps, newRunId });
 
-  return { taskList, runInline, repo };
+  const streamChat = makeChatOrchestrationStreamer(orchestratorDeps);
+  const resumeChat = makeChatOrchestrationResumer(orchestratorDeps);
+
+  return { taskList, runInline, runStream: streamChat, runResume: resumeChat, repo };
 }
 
 export type { AddJob };

@@ -1,6 +1,6 @@
 import './otel.ts'; // MUST be first; see otel.ts header comment.
 import { resolveModel } from '@seta/agent';
-import { registerAgent } from '@seta/agent/register';
+import { createAgentMastraStorage, registerAgent } from '@seta/agent/register';
 import { SpecializedAgentRegistry } from '@seta/agent-sdk';
 import { createContributionRegistry, createOverlayStore, requestIdStorage } from '@seta/core';
 import { coreDb } from '@seta/core/db';
@@ -8,7 +8,7 @@ import { emit, withEmit } from '@seta/core/events';
 import { createOutboxStore } from '@seta/core/outbox';
 import { registerCoreContributions } from '@seta/core/register';
 import { buildRuntime, runMigrations, type WorkerHandle } from '@seta/core/runtime';
-import { getIdentityVectorStore, listTenantRoleOverlays } from '@seta/identity';
+import { buildActorSession, getIdentityVectorStore, listTenantRoleOverlays } from '@seta/identity';
 import { registerIdentityContributions } from '@seta/identity/register';
 import { registerIntegrationsContributions } from '@seta/integrations/register';
 import {
@@ -19,7 +19,7 @@ import {
 } from '@seta/knowledge';
 import { registerKnowledgeContributions } from '@seta/knowledge/register';
 import { registerNotificationsContributions } from '@seta/notifications/register';
-import { plannerProposeAssignmentChatHitlDecider } from '@seta/planner/agent-tools';
+import { assignTask } from '@seta/planner';
 import { registerPlannerContributions } from '@seta/planner/register';
 import { createCrypto, createKeyProviderFromEnv, parseCryptoEnv } from '@seta/shared-crypto';
 import { closePools, getPool, initPools } from '@seta/shared-db';
@@ -40,17 +40,21 @@ import { registerStaffingContributions } from '@seta/staffing/register';
 import pino from 'pino';
 import { buildServerApp, registerAppContributions } from './build.ts';
 import { parseEnv } from './env.ts';
+import { logStreams } from './log-streams.ts';
 import { failedLoginAlertSubscriber } from './subscribers/failed-login-alert.ts';
 import { refreshRoleOverlaySubscriber } from './subscribers/refresh-role-overlay.ts';
 import { revokeSessionsOnDeactivationSubscriber } from './subscribers/revoke-sessions-on-deactivation.ts';
 
-const log = pino({
-  name: 'apps/server',
-  mixin() {
-    const requestId = requestIdStorage.getStore()?.requestId;
-    return requestId ? { request_id: requestId } : {};
+const log = pino(
+  {
+    name: 'apps/server',
+    mixin() {
+      const requestId = requestIdStorage.getStore()?.requestId;
+      return requestId ? { request_id: requestId } : {};
+    },
   },
-});
+  pino.multistream(logStreams('server')),
+);
 const env = parseEnv(process.env);
 
 initPools({ databaseUrl: env.DATABASE_URL, log: log.child({ subsystem: 'shared-db' }) });
@@ -121,8 +125,15 @@ const identityEmbeddingProvider: ReturnType<typeof resolveEmbeddingProvider> = {
   },
   embed: (...args) => resolveEmbeddingProvider().embed(...args),
 };
+// ONE shared Mastra store for both the engine runtime and the staffing
+// orchestrator's per-turn Mastra. Cross-Mastra-instance native-suspend resume
+// requires both wrap the SAME physical store; the engine's Mastra is built from
+// getPool('worker'), so the orchestrator must share that exact pool.
+const mastraStorage = createAgentMastraStorage({ pool: getPool('worker') });
+
 const staffingOrchestration = buildStaffingOrchestrationRuntime({
   repo: new StaffingRunStateRepository(),
+  mastraStorage,
   resolveModel: () => resolveModel('auto', { tierHint: 'fast' }).model,
   ports: {
     taskReader: makeTaskReader(),
@@ -133,6 +144,16 @@ const staffingOrchestration = buildStaffingOrchestrationRuntime({
     }),
     availability: makeAvailability(),
     userProfileLookup: makeUserProfileLookup(),
+    // Binds the staffing assign port to planner's public assignTask surface.
+    // RBAC is re-checked inside assignTask at the planner callee.
+    assign: {
+      async assign({ taskId, assigneeUserIds, actorUserId }) {
+        const session = await buildActorSession({ user_id: actorUserId });
+        for (const userId of assigneeUserIds) {
+          await assignTask({ task_id: taskId, user_id: userId, session });
+        }
+      },
+    },
   },
 });
 SpecializedAgentRegistry.freeze();
@@ -145,18 +166,17 @@ const agent = registerAgent({
   pool: getPool('worker'),
   databaseUrl: env.DATABASE_URL,
   reg,
+  // Reuse the SAME store instance the staffing orchestrator wraps so the engine
+  // Mastra and the per-turn orchestrator Mastra share one physical store.
+  mastraStorage,
   log: log.child({ subsystem: 'agent' }),
-  // Chat-flow HITL deciders: called by decide-approval when the approval was
-  // created by a chat-flow tool (workflow_id starts with '__chat_hitl:').
-  // Wired here because this is the only layer that can import from both the
-  // agent engine (packages/agent) and feature modules (packages/planner).
-  chatHitlDeciders: {
-    planner_proposeAssignment: plannerProposeAssignmentChatHitlDecider,
-  },
-  // The chat runtime: every chat turn streams through the inline staffing
-  // orchestration. apps/server is the only layer that can bind the staffing
-  // runtime to the engine surface.
-  chatOrchestration: staffingOrchestration.runInline,
+  // The chat runtime: every chat turn streams through the staffing
+  // orchestration's streaming entrypoint. apps/server is the only layer that
+  // can bind the staffing runtime to the engine surface.
+  chatOrchestration: staffingOrchestration.runStream,
+  // Native-suspend HITL resume: POST /chat/resume re-enters the suspended
+  // proposeAssignment composite via resumeStream. Same composition-root binding.
+  resumeOrchestration: staffingOrchestration.runResume,
   // Chat attachments: apps/server is the only layer that can import the
   // @seta/knowledge consume/mark functions into the engine surface.
   consumeThreadAttachments: async ({ tenantId, threadId, query }) => {
@@ -203,7 +223,7 @@ const rt = buildRuntime(env, {
   pool: getPool('worker'),
   log: log.child({ subsystem: 'core.runtime' }),
   // The orchestration kernel's queued runner (production async path). The chat
-  // harness uses staffingOrchestration.runInline instead; same registries.
+  // harness uses staffingOrchestration.runStream instead; same registries.
   extraJobs: {
     ...staffingOrchestration.taskList,
   },

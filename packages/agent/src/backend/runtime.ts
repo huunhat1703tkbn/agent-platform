@@ -1,4 +1,7 @@
 import { Mastra } from '@mastra/core';
+import { ConsoleLogger, type LogLevel } from '@mastra/core/logger';
+import type { MastraCompositeStore } from '@mastra/core/storage';
+import { MastraStorageExporter, Observability } from '@mastra/observability';
 import { PostgresStore } from '@mastra/pg';
 import type { Pool } from 'pg';
 import { adaptMastraEvent, onLifecycleEvent } from './workflows/_infra/lifecycle-hook.ts';
@@ -12,7 +15,29 @@ export type AgentRuntimeDeps = {
   pool: Pool;
   databaseUrl: string;
   log?: Logger;
+  /**
+   * Pre-built store to wrap the runtime Mastra in. When provided, the runtime
+   * reuses this instance instead of constructing its own PostgresStore — so the
+   * engine Mastra and the staffing orchestrator's per-turn Mastra can share ONE
+   * physical store (required for cross-Mastra-instance native-suspend resume).
+   * Built at the composition root via createAgentMastraStorage.
+   */
+  storage?: MastraCompositeStore;
 };
+
+/**
+ * Builds the store the agent runtime uses (PostgresStore, schema `agent`).
+ * Exposed so the composition root can construct ONE store and hand the same
+ * instance to both this engine runtime and the staffing orchestrator's per-turn
+ * Mastra — cross-instance native-suspend resume requires a shared store.
+ */
+export function createAgentMastraStorage(deps: { pool: Pool }): MastraCompositeStore {
+  return new PostgresStore({
+    id: 'agent-store',
+    schemaName: 'agent',
+    pool: deps.pool,
+  });
+}
 
 /**
  * Tracks in-flight lifecycle handler Promises so callers can await full
@@ -59,14 +84,27 @@ export function buildMastraFull(deps: AgentRuntimeDeps): {
   mastra: Mastra;
   drainer: LifecycleDrainer;
 } {
-  const storage = new PostgresStore({
-    id: 'agent-store',
-    schemaName: 'agent',
-    pool: deps.pool,
-  });
+  const storage = deps.storage ?? createAgentMastraStorage({ pool: deps.pool });
   const mastra = new Mastra({
     storage,
-    logger: false,
+    // Framework-level logs (step/tool/suspend transitions, internal warnings).
+    // WARN by default = high-signal, low-noise; raise via MASTRA_LOG_LEVEL when
+    // actively debugging. Complements the structured AI-tracing spans below.
+    logger: new ConsoleLogger({
+      name: 'Mastra',
+      level: (process.env.MASTRA_LOG_LEVEL as LogLevel) ?? 'warn',
+    }),
+    // AI tracing → agent.mastra_ai_spans (same shared store). One span tree per
+    // agent turn: tool-calls, native suspends, resumes — the agent-behavior
+    // truth that otherwise has to be reconstructed from mastra_messages by hand.
+    observability: new Observability({
+      configs: {
+        default: {
+          serviceName: 'seta-agent-engine',
+          exporters: [new MastraStorageExporter()],
+        },
+      },
+    }),
   });
   const drainer = wireLifecycleHook(mastra, deps.pool, deps.log);
   return { mastra, drainer };

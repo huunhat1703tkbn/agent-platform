@@ -15,8 +15,8 @@ import { plannerGetOpenTaskCountSpec, plannerGetOpenTaskCountTool } from './get-
 import { plannerGetTaskTool } from './get-task.ts';
 import { plannerListCommentsTool } from './list-comments.ts';
 import { plannerPostCommentTool } from './post-comment.ts';
-import { plannerProposeAssignmentTool } from './propose-assignment.ts';
-import { identitySearchUsersBySkillsTool } from './search-users-by-skills.ts';
+import { plannerQueryTasksTool } from './query-tasks.ts';
+import { plannerSearchGroupMembersBySkillsTool } from './search-users-by-skills.ts';
 import { plannerSetAssigneesTool } from './set-assignees.ts';
 
 // Lazy so a missing EMBED config doesn't break module load — only first use.
@@ -107,11 +107,11 @@ of skill fit. Also call planner_getTask to get the current assignees — exclude
 anyone already assigned.
 
 Then choose the signals that matter for this specific request:
-- **search_users_by_skills** — who has the required skills (groupId from task)
+- **planner_searchGroupMembersBySkills** — who has the required skills (groupId from task)
 - **planner_findSimilarTasks** — who has done similar work before (useful for
   "again" / "like last time" requests or follow-up tasks)
 - **planner_getOpenTaskCountForUser** — current workload (relevant when urgency
-  is high or team capacity is a concern)
+  is high or team capacity is a concern). For the actual task list (not just the count), use planner_queryTasks with assigneeUserId instead.
 - **identity_getAvailabilityForUser** — OOO / busy status (cheap to check;
   only decisive if a candidate would otherwise be the top pick)
 - **identity_getTimezoneForUser** — timezone overlap (relevant for long-running
@@ -121,7 +121,7 @@ Most decisions need 2-4 of these signals. Pick the ones that actually change
 the answer for this task. Fetch what you will use; skip what you won't.
 
 Each candidate in planner_proposeAssignment requires a **displayName** — use
-the displayName returned by search_users_by_skills, or the displayName from
+the displayName returned by planner_searchGroupMembersBySkills, or the displayName from
 planner_getTask assignees. Never pass a raw userId as the displayName field.
 
 planner_proposeAssignment surfaces an interactive approval card. Call it as the
@@ -157,18 +157,19 @@ assign this to" requests; those must be handled inline via planner_proposeAssign
 
 ## Finding tasks
 
-Use planner_findSimilarTasks for any "find", "list", or "search" request.
-Parameters:
-- **text**: the user's query verbatim
-- **completionStatus**: "open" (default), "completed", or "any" — infer from
-  words like "done", "closed", "completed"
-- **createdWithin**: "any" (default); "week" if user says "this week"; "month"
-  if "last month"
-- **onlyWithReviewState**: set to true when the user's intent is specifically
-  to find tasks awaiting review — phrases like "need review", "need to review",
-  "needs review", "to review", "flagged for review". Default false. Do not
-  infer this from the task topic or skill tags.
-- **limit**: 10 by default; increase only if explicitly asked
+Two tools serve different query types — use the right one:
+
+planner_queryTasks — structured criteria. Use when you know WHO owns the tasks,
+WHICH plan/group they are in, WHAT status, or WHICH tags apply.
+Examples: "find Tuấn's open tasks", "what's overdue in plan X",
+"show tasks needing review", "list deferred tasks tagged docker".
+At least one filter must be set. assigneeUserId is a UUID from a profile lookup.
+
+planner_findSimilarTasks — semantic/topic search. Use when the user describes
+what a task is *about* rather than who owns it or its status.
+Examples: "find tasks about onboarding", "anything related to the API migration".
+Results may be stale on assignee and status — call planner_getTask for the
+live record before acting.
 
 After returning results that contain tasks with reviewState "needs_review",
 if the user has not already asked about assignment, proactively offer to find
@@ -176,7 +177,7 @@ suitable assignees for those tasks.
 
 ## Finding members by skill
 
-Use search_users_by_skills. Never generate names from memory.
+Use planner_searchGroupMembersBySkills. Never generate names from memory.
 
 When the request includes a task or plan context, extract its groupId and call
 once. When there is no task in context, search each group the user can access
@@ -189,8 +190,8 @@ likely duplicate exists, surface it and let the user decide. If no duplicate,
 call planner_createTask — it shows a confirm card.
 
 ## Tool reference
-Read: identity_whoAmI, planner_getTask, planner_findSimilarTasks,
-      planner_listComments, search_users_by_skills, planner_getOpenTaskCountForUser,
+Read: identity_whoAmI, planner_getTask, planner_queryTasks, planner_findSimilarTasks,
+      planner_listComments, planner_searchGroupMembersBySkills, planner_getOpenTaskCountForUser,
       identity_getTimezoneForUser, identity_getAvailabilityForUser
 Write (HITL via chat card): planner_createTask, planner_proposeAssignment, planner_postComment
 Write (canvas/workflow only — do NOT call in chat): planner_setAssignees, planner_assignTask
@@ -203,10 +204,10 @@ Surface your reasoning as you go so the user can follow along.`,
     planner_createTask: plannerCreateTask,
     planner_getTask: plannerGetTaskTool,
     planner_findSimilarTasks: plannerFindSimilarTasks,
+    planner_queryTasks: plannerQueryTasksTool,
     planner_listComments: plannerListCommentsTool,
     planner_postComment: plannerPostCommentTool,
-    planner_proposeAssignment: plannerProposeAssignmentTool,
-    search_users_by_skills: identitySearchUsersBySkillsTool,
+    planner_searchGroupMembersBySkills: plannerSearchGroupMembersBySkillsTool,
     planner_getOpenTaskCountForUser: plannerGetOpenTaskCountTool,
     identity_getTimezoneForUser: identityGetTimezoneTool,
     identity_getAvailabilityForUser: identityGetAvailabilityTool,

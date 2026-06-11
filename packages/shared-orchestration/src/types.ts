@@ -1,6 +1,6 @@
 import type {
   AgentMemoryHandle,
-  ChatHitlRecorder,
+  ApprovalCard,
   SpecializedAgentRunCtx,
   TrustEnvelope,
 } from '@seta/agent-sdk';
@@ -13,8 +13,6 @@ export interface RunCtx {
   /** Resolved permission set for the actor — forwarded into each agent's run
    *  ctx so cross-module read tools enforce access. Empty for queued runs. */
   effectivePermissions?: ReadonlySet<string>;
-  /** Optional recorder for in-thread HITL approval cards (chat inline runs only). */
-  recordHitlApproval?: ChatHitlRecorder;
   /** The real chat thread id (chat inline runs only). */
   threadId?: string;
   /** Thread-scoped conversation-entities memory handle (chat inline runs only). */
@@ -67,6 +65,7 @@ export type OrchestrationEvent =
   /** LLM text token emitted before the first tool call — streams the agent's
    *  opening acknowledgment to the user while tools are pending. */
   | { kind: 'text'; text: string }
+  | { kind: 'approval'; card: ApprovalCard; mastraRunId: string; toolCallId: string }
   | { kind: 'final'; result: unknown };
 
 /** graphile-worker `addJob` signature (injected; the kernel never opens a pool). */

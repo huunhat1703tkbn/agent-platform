@@ -337,53 +337,6 @@ describe('POST /api/agent/v1/chat (orchestration runtime persistence)', () => {
     });
   });
 
-  it('passes a recordHitlApproval recorder in the orchestration ctx', async () => {
-    await withAgentTestDb(async ({ pool, databaseUrl }) => {
-      const { admin_user_id, tenant_id } = await createTestTenantWithAdmin({ pool });
-      const { buildMastra } = await import('../../src/backend/runtime.ts');
-      const mastra = buildMastra({ pool, databaseUrl });
-      await (mastra.getStorage() as unknown as { init: () => Promise<void> }).init();
-
-      let capturedCtx: Record<string, unknown> | undefined;
-      async function* captureOrchestration(
-        _runInput: unknown,
-        ctx: unknown,
-      ): AsyncIterable<OrchestrationEvent> {
-        capturedCtx = ctx as Record<string, unknown>;
-        yield { kind: 'final', result: { message: 'ok' } };
-      }
-
-      const app = new Hono<{ Variables: { session: TestSession } }>();
-      app.use('*', async (c, next) => {
-        c.set('session', {
-          tenant_id,
-          user_id: admin_user_id,
-          effective_permissions: new Set(['agent.chat.use', 'agent.thread.read.self']),
-          role_summary: { roles: ['org.admin'], cross_tenant_read: false },
-        });
-        await next();
-      });
-      registerAgentRoutes(app, {
-        mastra: mastra as never,
-        pool,
-        chatOrchestration: (runInput, ctx) => captureOrchestration(runInput, ctx),
-      });
-
-      const res = await app.request('/api/agent/v1/chat', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          id: 'orch-hitl-thread-1',
-          messages: [v6UserMessage('Who should take this task')],
-        }),
-      });
-      expect(res.status).toBe(200);
-      await res.text();
-
-      expect(typeof capturedCtx?.recordHitlApproval).toBe('function');
-    });
-  });
-
   it('passes threadId + memory handles in the orchestration ctx', async () => {
     await withAgentTestDb(async ({ pool, databaseUrl }) => {
       const { admin_user_id, tenant_id } = await createTestTenantWithAdmin({ pool });
@@ -486,7 +439,7 @@ describe('GET /api/agent/v1/threads/:id (data-page-context round-trip)', () => {
       await storage.stores.memory.saveThread({
         thread: {
           id: threadId,
-          resourceId: admin_user_id,
+          resourceId: `${tenant_id}:${admin_user_id}`,
           title: 'with context',
           createdAt: now,
           updatedAt: now,
@@ -498,7 +451,7 @@ describe('GET /api/agent/v1/threads/:id (data-page-context round-trip)', () => {
           {
             id: 'msg-ctx-1',
             threadId,
-            resourceId: admin_user_id,
+            resourceId: `${tenant_id}:${admin_user_id}`,
             role: 'user',
             createdAt: now,
             content: {
@@ -581,7 +534,7 @@ describe('GET /api/agent/v1/threads/:id (sub-agent leaf tool calls)', () => {
       await storage.stores.memory.saveThread({
         thread: {
           id: threadId,
-          resourceId: admin_user_id,
+          resourceId: `${tenant_id}:${admin_user_id}`,
           title: 'with delegate',
           createdAt: now,
           updatedAt: now,
@@ -593,7 +546,7 @@ describe('GET /api/agent/v1/threads/:id (sub-agent leaf tool calls)', () => {
           {
             id: 'msg-leaf-1',
             threadId,
-            resourceId: admin_user_id,
+            resourceId: `${tenant_id}:${admin_user_id}`,
             role: 'assistant',
             createdAt: now,
             content: {
