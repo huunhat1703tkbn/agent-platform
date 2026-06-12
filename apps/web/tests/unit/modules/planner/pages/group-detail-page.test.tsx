@@ -118,6 +118,9 @@ function defaultHandlers() {
     http.get('*/api/planner/v1/groups/g1/activity*', () =>
       HttpResponse.json({ count: 0, items: [] }),
     ),
+    http.get('*/api/planner/v1/groups/g1/join-requests*', () =>
+      HttpResponse.json({ requests: [] }),
+    ),
     http.get('*/api/integrations/m365/groups/g1/sync-status', () =>
       HttpResponse.json({ sync_status: null }),
     ),
@@ -197,13 +200,13 @@ describe('GroupDetailPage', () => {
     expect(screen.getAllByText('alice@example.com').length).toBeGreaterThan(0);
   });
 
-  it('activity tab renders ComingSoon', async () => {
+  it('activity tab renders the activity feed', async () => {
     server.use(...defaultHandlers());
     renderInRouter(<AdminPage tab="activity" />);
 
     await screen.findByRole('heading', { name: 'Engineering' });
-    // ComingSoon renders "{feature} is coming soon"
-    expect(screen.getByText(/Activity is coming soon/i)).toBeInTheDocument();
+    // Activity tab now renders the real ActivityFeedTab; with no items it shows its empty state.
+    expect(await screen.findByText(/No activity yet in this group/i)).toBeInTheDocument();
   });
 
   it('labels tab renders ComingSoon', async () => {
