@@ -34,6 +34,11 @@ export {
   type ThiAssessment,
 } from './backend/domain/feasibility.ts';
 export {
+  getLatestReportStatus,
+  listPlans,
+  type PlanListItem,
+} from './backend/domain/plans.ts';
+export {
   classifyBusyRate,
   classifyOnTime,
   classifyThi,

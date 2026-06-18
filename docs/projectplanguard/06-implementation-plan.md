@@ -97,7 +97,17 @@ Deterministic-first: get the numbers exact before any LLM.
 
 ## P3 — UI + harden + tests (Jun 21–22)
 
-- [ ] Web companion: plan picker/upload → **DS07 dashboard** (THI, feasibility status, gap table, risk warnings, recommendations) + PMO review/approve panel. Compose `@seta/shared-ui` only.
+> **✅ Status (built 2026-06-18):** DS07 dashboard web companion landed at `/pmo/review`
+> (`apps/web/src/modules/pmo/`): plan picker → verdict banner (feasibility status + reason +
+> confidence + cross-dimension conflict callout), header metric strip (compliance, peak busy, THI,
+> velocity, on-time, risks — RAG-tinted), pillar badges, and tabs for Gaps / Risks / Recommendations
+> / Benchmark, plus the **PMO "Issue DS07 Report" approval panel**. Backed by `@seta/pmo/http`
+> routes (`GET /pmo/plans`, `GET/POST /pmo/plans/:id/review`, RBAC-gated) wired in apps/server;
+> nav manifest registered. Composes `@seta/shared-ui` only (no custom CSS). Verified: full
+> `pnpm typecheck` + `pnpm lint` green; 47 pmo tests pass. **Remaining:** run the live app for a
+> visual pass + screenshots for slides.
+
+- [x] Web companion: plan picker → **DS07 dashboard** (compliance, THI, feasibility status, gap table, risk warnings, recommendations, benchmark) + PMO review/approve panel. Composes `@seta/shared-ui` only.
 - [ ] Edge/failure cases ([04 §5](04-agent-design.md)): tool timeout → partial DS07; missing mandatory section → PMO checkpoint; ambiguous input → clarification; insufficient benchmark data.
 - [ ] Full test pass: unit (formulas) + integration (Answer_Key) + e2e (upload→DS07). Record accuracy vs Answer_Key for slide 7.
 - [ ] Latency check: target < 15 min (realistically seconds) per plan; capture numbers for slide 7.

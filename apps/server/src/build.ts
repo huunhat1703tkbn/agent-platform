@@ -18,6 +18,7 @@ import { registerKnowledgeRoutes, registerKnowledgeStreamRoutes } from '@seta/kn
 import type { KnowledgeStreamHub } from '@seta/knowledge/stream';
 import { registerNotificationsRoutes } from '@seta/notifications/http';
 import { NotificationStreamHub } from '@seta/notifications/stream';
+import { registerPmoRoutes } from '@seta/pmo/http';
 import { getPool } from '@seta/shared-db';
 import {
   buildRegistry,
@@ -261,6 +262,7 @@ export function buildServerApp(
     | { hub: NotificationStreamHub }
     | undefined;
   registerNotificationsRoutes(app, notificationStreamHandle?.hub ?? new NotificationStreamHub());
+  registerPmoRoutes(app);
 
   app.onError(handleServerError(reg));
 
