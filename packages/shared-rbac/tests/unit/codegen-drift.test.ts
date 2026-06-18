@@ -8,10 +8,12 @@ import { describe, expect, it } from 'vitest';
 const repoRoot = resolve(fileURLToPath(import.meta.url), '../../../../..');
 
 describe('permission-keys codegen', () => {
+  // Shelling out to `pnpm gen:rbac` cold-starts pnpm + tsx (esbuild compile),
+  // which takes ~10s on CI runners — well past vitest's 5s default. Give it room.
   it('committed file matches a fresh generation', () => {
     const path = 'packages/shared-rbac/src/generated/permission-keys.ts';
     const before = readFileSync(resolve(repoRoot, path), 'utf8');
     execSync('pnpm gen:rbac', { cwd: repoRoot });
     expect(readFileSync(resolve(repoRoot, path), 'utf8')).toBe(before);
-  });
+  }, 60_000);
 });
