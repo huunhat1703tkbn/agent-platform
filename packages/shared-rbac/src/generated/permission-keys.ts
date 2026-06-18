@@ -94,6 +94,9 @@ export type PermissionKey =
   | 'planner.trash.empty'
   | 'planner.trash.read'
   | 'planner.trash.restore'
+  | 'pmo.plan.read'
+  | 'pmo.review.read'
+  | 'pmo.review.write'
   | 'staffing.read'
   | 'staffing.workflow.cancel'
   | 'staffing.workflow.read'
@@ -194,6 +197,9 @@ export const ALL_PERMISSIONS: readonly PermissionKey[] = [
   'planner.trash.empty',
   'planner.trash.read',
   'planner.trash.restore',
+  'pmo.plan.read',
+  'pmo.review.read',
+  'pmo.review.write',
   'staffing.read',
   'staffing.workflow.cancel',
   'staffing.workflow.read',

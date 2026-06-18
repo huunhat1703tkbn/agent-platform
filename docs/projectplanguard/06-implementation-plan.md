@@ -57,16 +57,18 @@ Deterministic-first: get the numbers exact before any LLM.
 > normalised raw sheets) — the deterministic layer classifies them via N01/N10, while per-member
 > busy rate is computed directly from DS03.
 >
-> **Follow-ups (next chunk):** expose the 4 read agent tools (blocked on replacing the placeholder
-> RBAC with real perms mirrored into `shared-rbac/inventory.ts` + parity test); then Compliance +
-> Feasibility sub-agents.
+> **Update (chunk A):** Real RBAC landed — `pmo.plan.read` / `pmo.review.{read,write}` with
+> `pmo.reviewer` + `pmo.viewer` roles, mirrored into `shared-rbac/inventory.ts`, regenerated via
+> `pnpm gen:rbac`, parity-tested. The 4 read tools are authored + registered (`reg.module agentTools`).
+> 29 pmo tests pass; full `pnpm typecheck` + `pnpm lint` green repo-wide.
+> **Next:** Compliance + Feasibility sub-agents → Benchmark/Synthesis + orchestrator + HITL (P2).
 
 - [x] `pmo` domain functions (pure, unit-tested vs [05](05-feasibility-rules-and-ds07.md)):
   - [x] `scoreCompliance(planId)` — DS06 × DS02 weights, custom-exclusion, S07-missing default.
   - [x] `assessBusyRate(planId)` — N01 per-member (DS03) + role peak (DS07). Capacity-gap (DS08) deferred to Synthesis.
   - [x] `validateDependencies(projectId)` — cycle detection (Tarjan SCC) + phase-order violations from DS01.
   - [x] `assessThi(planId)` — N10.
-- [ ] Expose as agent tools: `pmo_sectionChecker`, `pmo_busyRateCalc`, `pmo_dependencyValidator`, `pmo_thiScorer` (read tools; forward `ctx.abortSignal`).
+- [x] Expose as agent tools: `pmo_sectionChecker`, `pmo_busyRateCalc`, `pmo_dependencyValidator`, `pmo_thiScorer` (read tools).
 - [ ] Compliance + Feasibility sub-agents (Compliance hybrid for semantic matching; Feasibility deterministic).
 - [x] **Integration tests vs Answer_Key** F-01, F-02, F-03, F-1C, F-05 (real Postgres via testcontainers).
 

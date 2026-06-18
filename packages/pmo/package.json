@@ -10,6 +10,7 @@
     "./events": "./src/events.ts",
     "./rbac": "./src/rbac.ts",
     "./contracts": "./src/contracts.ts",
+    "./agent-tools": "./src/agent-tools.ts",
     "./register": "./src/register.ts"
   },
   "scripts": {

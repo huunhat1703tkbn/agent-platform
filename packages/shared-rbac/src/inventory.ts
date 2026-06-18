@@ -34,6 +34,25 @@ export const INVENTORY: StatementSpec[] = [
     ],
   },
   {
+    module: 'pmo',
+    statement: {
+      'pmo.plan': ['read'],
+      'pmo.review': ['read', 'write'],
+    },
+    roles: [
+      {
+        slug: 'pmo.reviewer',
+        description: 'Review project plans and issue DS07 review reports',
+        permissions: ['pmo.plan.read', 'pmo.review.read', 'pmo.review.write'],
+      },
+      {
+        slug: 'pmo.viewer',
+        description: 'Read project plans and review reports',
+        permissions: ['pmo.plan.read', 'pmo.review.read'],
+      },
+    ],
+  },
+  {
     module: 'notifications',
     statement: {
       'notifications.preference': ['read', 'write'],

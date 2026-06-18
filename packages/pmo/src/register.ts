@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ContributionRegistry } from '@seta/core';
+import { pmoAgentTools } from './agent-tools.ts';
 import * as schema from './backend/db/schema.ts';
 import { PMO_EVENTS } from './events.ts';
 import { pmoRbac } from './rbac.ts';
@@ -14,5 +15,6 @@ export function registerPmoContributions(reg: ContributionRegistry): void {
     migrationsDir: resolve(__dirname, '../drizzle/migrations'),
     events: PMO_EVENTS,
     rbac: pmoRbac,
+    agentTools: pmoAgentTools,
   });
 }
