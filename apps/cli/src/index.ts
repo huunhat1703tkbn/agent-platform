@@ -18,6 +18,7 @@ import { integrationsMailSetCommand } from './commands/integrations-mail-set.ts'
 import { integrationsMailTestCommand } from './commands/integrations-mail-test.ts';
 import { migrateCommand } from './commands/migrate.ts';
 import { plannerCommand } from './commands/planner.ts';
+import { registerPmoSeedCommand } from './commands/pmo-seed.ts';
 import { roleGrantCommand } from './commands/role-grant.ts';
 import { seedCommand } from './commands/seed.ts';
 import { tenantCreateCommand } from './commands/tenant-create.ts';
@@ -286,6 +287,7 @@ program
   );
 
 plannerCommand(program);
+registerPmoSeedCommand(program);
 
 program
   .command('embed-backfill')

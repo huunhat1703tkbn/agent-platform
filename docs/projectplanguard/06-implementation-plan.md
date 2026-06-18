@@ -20,6 +20,19 @@ Phased build to the **23 Jun submission**. Today = 2026-06-12 (~11 days). Maps t
 
 ## P0 — Setup (Jun 12–13)
 
+> **✅ Status (built 2026-06-18):** Local env running (see [09](09-local-setup-notes.md)).
+> `pmo` feature module scaffolded + wired into server/worker/cli. Schema for all 12 tables
+> (DS01–DS08 + REF + KPI norms + `review_report`) defined, migration `0000_*.sql` applied
+> (`pmo` schema live). Dataset converted to JSON fixtures (`packages/pmo/seed-data/pmo01.json`
+> + `answer-key.json`) and loaded via `seta-cli pmo-seed --tenant hackathon` (idempotent;
+> verified: PLAN-002=Red, cycle E07↔E08, DS06 1 Missing/1 Custom/2 Weak). Verify green:
+> pmo+cli typecheck, contract test, depcruise (0 errors), module-shape, rbac-coverage, boot 200.
+>
+> **Follow-ups before merge:** (1) replace placeholder RBAC (`pmo.example`/`pmo.viewer`) with real
+> perms (`pmo.plan.read`, `pmo.review.write`, …) **mirrored into `packages/shared-rbac/src/inventory.ts`**
+> + add a parity test; (2) add DS07 DTOs in `contracts.ts` (clears the `no-orphan` depcruise warning);
+> (3) web companion deferred to P3.
+
 - [ ] Fork `Seta-International/agent-platform`; configure GitHub Actions vars/secrets per `DEPLOY.md` (secrets from `AWS-CREDENTIALS.txt`, **never commit**).
 - [ ] Local stack: `pnpm install` → `pnpm db:up` → `pnpm db:migrate` → `bash scripts/tenant-bootstrap.sh` → `pnpm dev`. Confirm `/health/ready` 200.
 - [ ] First deploy to `team-1-hackathon.seta-international.com` to prove the pipeline early.

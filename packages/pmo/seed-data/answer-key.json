@@ -1,0 +1,65 @@
+[
+  {
+    "finding_id": "F-01",
+    "problem": "Problem 1",
+    "entity_type": "Plan",
+    "entity_id": "PLAN-002",
+    "issue_type": "Missing_section",
+    "expected_detection": "Risk Register (S07) missing -> Risk pillar defaults to Red",
+    "severity": "High"
+  },
+  {
+    "finding_id": "F-02",
+    "problem": "Problem 1",
+    "entity_type": "Plan",
+    "entity_id": "PLAN-002",
+    "issue_type": "Weak_section",
+    "expected_detection": "Resource_Plan & Acceptance_Criteria are thin",
+    "severity": "Medium"
+  },
+  {
+    "finding_id": "F-03",
+    "problem": "Problem 1",
+    "entity_type": "Plan",
+    "entity_id": "PLAN-002",
+    "issue_type": "Feasibility",
+    "expected_detection": "Peak role busy ~135% + THI 9% (<10%)",
+    "severity": "High"
+  },
+  {
+    "finding_id": "F-04",
+    "problem": "Problem 1",
+    "entity_type": "Plan",
+    "entity_id": "PLAN-002",
+    "issue_type": "Custom_section",
+    "expected_detection": "EVM_Cost_Tracking is custom -> flag for review, NOT a gap",
+    "severity": "Info"
+  },
+  {
+    "finding_id": "F-05",
+    "problem": "Problem 1",
+    "entity_type": "Plan",
+    "entity_id": "PLAN-001",
+    "issue_type": "Baseline_OK",
+    "expected_detection": "All 8 sections present; velocity 24 matches Migration benchmark ~22.5 -> feasible",
+    "severity": "Info"
+  },
+  {
+    "finding_id": "F-06",
+    "problem": "Problem 1",
+    "entity_type": "Benchmark",
+    "entity_id": "PRJ-H-199",
+    "issue_type": "Benchmark_outlier",
+    "expected_detection": "Exclude from benchmark (15 MD/0.5mo, too small)",
+    "severity": "Info"
+  },
+  {
+    "finding_id": "F-1C",
+    "problem": "Problem 1",
+    "entity_type": "Plan",
+    "entity_id": "PLAN-002",
+    "issue_type": "Dependency_cycle",
+    "expected_detection": "Cycle TASK-E07<->TASK-E08 + test-before-build (E06)",
+    "severity": "High"
+  }
+]

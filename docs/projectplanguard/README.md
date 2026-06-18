@@ -36,6 +36,7 @@ and explains it.
 | [06-implementation-plan.md](06-implementation-plan.md) | Phased build plan, `pnpm gen module` steps, day-by-day to 23 Jun |
 | [07-test-and-uat.md](07-test-and-uat.md) | Test cases derived from the Answer_Key + the UAT scenario plan |
 | [08-deliverables-and-deploy.md](08-deliverables-and-deploy.md) | Submission checklist, 8-slide map, deploy pipeline (no secrets) |
+| [09-local-setup-notes.md](09-local-setup-notes.md) | Setup đã verify thực tế + gotchas (Node 24, `.env` fix, OpenAI key bắt buộc để boot, endpoint login) |
 
 ---
 
@@ -67,11 +68,11 @@ Decisions that shape the build. Append here when a material choice is made.
 
 | # | Decision | Rationale | Status |
 |---|---|---|---|
-| D1 | **Build on the Seta platform (Mastra/Hono/Drizzle), not the proposal's FastAPI/LangGraph/Next.js stack** | The assignment is to build on the boilerplate; the platform's `staffing` orchestrator already implements agent-of-agents + HITL + pgvector RAG. See [03](03-platform-mapping.md). | ✅ Adopted |
+| D1 | **Build on the Seta platform (Mastra/Hono/Drizzle), not the proposal's FastAPI/LangGraph/Next.js stack** | The assignment is to build on the boilerplate; the platform's `staffing` orchestrator already implements agent-of-agents + HITL + pgvector RAG. See [03](03-platform-mapping.md). | ✅ **Confirmed by team** — reuse what's already built; ignore the proposal stack |
 | D2 | **Data lives in a new `pmo` module schema** (DS01–DS08, REF as tables); historical projects (DS04/DS05) embedded into a per-tenant pgvector table for benchmark similarity | Respects module-boundary rules; reuses the embeddings/retrieval stack | ✅ Adopted |
 | D3 | **Orchestration follows the staffing pattern** — orchestrator delegates to Compliance / Feasibility / Benchmark / Synthesis sub-agents; deterministic stages skip the LLM | Matches platform's proven chat-runtime shape; deterministic scoring is auditable | ✅ Adopted |
 | D4 | **DS07 report generation is the terminal write, gated by a HITL approval card** | Platform rule: HITL on every write; PMO keeps final approval | ✅ Adopted |
-| D5 | LLM model | Platform default is `openai/gpt-5.5` via `AGENT_MODELS`; proposal said "GPT-4-class". Use the platform default; reasoning tier for Synthesis. | 🔶 Confirm with organizer key |
+| D5 | LLM model | Use the **organizer-provided OpenAI API key** (set as `OPENAI_API_KEY`). Platform default `openai/gpt-5.5` via `AGENT_MODELS`; reasoning tier for Synthesis, fast tier for orchestrator/sub-agents. | ✅ **Confirmed** — organizer key |
 
 ---
 
