@@ -140,12 +140,19 @@ describe('POST /api/agent/v1/workflows/runs/:workflowId/start', () => {
         body: JSON.stringify({ taskId: '00000000-0000-0000-0000-000000000001' }),
       });
       expect(res.status).toBe(200);
-      // Wait for the void-Promise catch + projection to flush.
-      await new Promise((r) => setTimeout(r, 50));
-      const row = await pool.query(
-        `SELECT status, error_summary FROM agent.workflow_runs WHERE run_id = $1`,
-        [runId],
-      );
+      // The route fires `void run.start().catch(() => void onLifecycleEvent('run-failed'))` —
+      // two levels of fire-and-forget followed by a DB write through testcontainers. A fixed
+      // 50ms sleep is too tight on loaded CI runners. Poll until the row transitions or we time out.
+      const deadline = Date.now() + 5_000;
+      let row: Awaited<ReturnType<typeof pool.query>>;
+      do {
+        row = await pool.query(
+          `SELECT status, error_summary FROM agent.workflow_runs WHERE run_id = $1`,
+          [runId],
+        );
+        if (row.rows[0]?.status === 'failed') break;
+        await new Promise((r) => setTimeout(r, 20));
+      } while (Date.now() < deadline);
       expect(row.rows[0]?.status).toBe('failed');
       expect(row.rows[0]?.error_summary).toBe('compute_failed: boom');
     });
