@@ -76,6 +76,14 @@ jobs:
               -e DATABASE_URL \
               seeder seed $ARGS
 
+            # Load the PMO-01 ProjectPlanGuard dataset (DS01–DS08 + REF + KPI norms)
+            # into the pmo schema for this tenant. Idempotent (delete-then-insert);
+            # runs after the generic seed so the tenant slug already resolves.
+            echo "--- Seeding PMO-01 dataset ---"
+            docker compose --env-file /opt/seta/.env run --rm \
+              -e DATABASE_URL \
+              seeder pmo-seed --tenant "$TENANT"
+
             echo "--- Bringing stack back up ---"
             docker compose --env-file /opt/seta/.env up -d
 
