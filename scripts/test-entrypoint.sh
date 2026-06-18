@@ -47,6 +47,7 @@ assert_dispatch() {
 assert_dispatch "serve"   "tsx src/index.ts (cwd=${APP_HOME}/apps/server)"
 assert_dispatch "migrate" "tsx src/index.ts migrate (cwd=${APP_HOME}/apps/cli)"
 assert_dispatch "seed"    "tsx src/index.ts seed (cwd=${APP_HOME}/apps/cli)"
+assert_dispatch "pmo-seed" "tsx src/index.ts pmo-seed (cwd=${APP_HOME}/apps/cli)"
 assert_dispatch "health"  "tsx src/index.ts health (cwd=${APP_HOME}/apps/cli)"
 
 # Unknown subcommand should exit non-zero.

@@ -6,6 +6,7 @@
 #   worker           — start the graphile-worker pool (apps/worker)
 #   migrate          — run Drizzle migrations via the CLI
 #   seed             — seed demo data via the CLI
+#   pmo-seed         — load the PMO-01 ProjectPlanGuard dataset via the CLI
 #   health           — quick connectivity check via the CLI
 #
 # The image runs TypeScript source directly via tsx (matching dev runtime).
@@ -30,13 +31,13 @@ case "${CMD}" in
     cd "${WORKER_DIR}"
     exec "${WORKER_DIR}/node_modules/.bin/tsx" src/index.ts
     ;;
-  migrate|seed|health)
+  migrate|seed|pmo-seed|health)
     cd "${CLI_DIR}"
     exec "${CLI_DIR}/node_modules/.bin/tsx" src/index.ts "$@"
     ;;
   *)
     echo "entrypoint: unknown subcommand: ${CMD}" >&2
-    echo "usage: serve | worker | migrate | seed | health" >&2
+    echo "usage: serve | worker | migrate | seed | pmo-seed | health" >&2
     exit 64
     ;;
 esac
