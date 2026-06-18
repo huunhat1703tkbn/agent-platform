@@ -14,6 +14,24 @@ function rcPayload(args: { tenantId: string; startedBy: string }): Record<string
   return rc.toJSON();
 }
 
+// The pubsub → subscriber → DB write is async; a fixed sleep races under CI load.
+// Poll the query until it satisfies `ok` (or time out and return the last result,
+// so the assertion still reports a meaningful diff). Mirrors the run-failed
+// projection test's poll-don't-sleep approach.
+async function pollQuery<T extends { rowCount: number | null; rows: unknown[] }>(
+  fn: () => Promise<T>,
+  ok: (r: T) => boolean,
+  timeoutMs = 5000,
+): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  let last = await fn();
+  while (!ok(last) && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 25));
+    last = await fn();
+  }
+  return last;
+}
+
 describe('lifecycle hook wiring', () => {
   it('publishing workflow.start on the global pubsub writes a workflow_runs row', async () => {
     await withAgentTestDb(async ({ pool, databaseUrl }) => {
@@ -35,11 +53,13 @@ describe('lifecycle hook wiring', () => {
         },
       });
 
-      await new Promise((r) => setTimeout(r, 100));
-
-      const r = await pool.query(
-        `SELECT workflow_id, tenant_id, started_by, started_via, status FROM agent.workflow_runs WHERE run_id = $1`,
-        [runId],
+      const r = await pollQuery(
+        () =>
+          pool.query(
+            `SELECT workflow_id, tenant_id, started_by, started_via, status FROM agent.workflow_runs WHERE run_id = $1`,
+            [runId],
+          ),
+        (res) => (res.rowCount ?? 0) === 1,
       );
       expect(r.rowCount).toBe(1);
       expect(r.rows[0]!.workflow_id).toBe('agent.test.noop');
@@ -69,7 +89,11 @@ describe('lifecycle hook wiring', () => {
           prevResult: { status: 'success', output: {} },
         },
       });
-      await new Promise((r) => setTimeout(r, 50));
+      // Wait until the run row exists before signalling completion.
+      await pollQuery(
+        () => pool.query(`SELECT 1 FROM agent.workflow_runs WHERE run_id = $1`, [runId]),
+        (res) => (res.rowCount ?? 0) === 1,
+      );
 
       await mastra.pubsub.publish('workflows-finish', {
         type: 'workflow.end',
@@ -81,11 +105,14 @@ describe('lifecycle hook wiring', () => {
           state: { result: { output: { ok: true } } },
         },
       });
-      await new Promise((r) => setTimeout(r, 100));
 
-      const r = await pool.query(
-        `SELECT status, duration_ms FROM agent.workflow_runs WHERE run_id = $1`,
-        [runId],
+      const r = await pollQuery(
+        () =>
+          pool.query(`SELECT status, duration_ms FROM agent.workflow_runs WHERE run_id = $1`, [
+            runId,
+          ]),
+        (res) =>
+          res.rows[0] !== undefined && (res.rows[0] as { status: string }).status === 'success',
       );
       expect(r.rows[0]!.status).toBe('success');
       expect(r.rows[0]!.duration_ms).toBe(123);
@@ -114,7 +141,10 @@ describe('lifecycle hook wiring', () => {
           prevResult: { status: 'success', output: {} },
         },
       });
-      await new Promise((r) => setTimeout(r, 50));
+      await pollQuery(
+        () => pool.query(`SELECT 1 FROM agent.workflow_runs WHERE run_id = $1`, [runId]),
+        (res) => (res.rowCount ?? 0) === 1,
+      );
 
       // Now publish workflow.suspend with the live RequestContext object — the
       // exact shape Mastra produces internally for evented suspend.
@@ -134,18 +164,25 @@ describe('lifecycle hook wiring', () => {
           expiresAt: new Date(Date.now() + 86400000).toISOString(),
         },
       });
-      await new Promise((r) => setTimeout(r, 100));
 
-      const run = await pool.query(
-        `SELECT status, suspend_reason FROM agent.workflow_runs WHERE run_id = $1`,
-        [runId],
+      const run = await pollQuery(
+        () =>
+          pool.query(`SELECT status, suspend_reason FROM agent.workflow_runs WHERE run_id = $1`, [
+            runId,
+          ]),
+        (res) =>
+          res.rows[0] !== undefined && (res.rows[0] as { status: string }).status === 'paused',
       );
       expect(run.rows[0]!.status).toBe('paused');
       expect(run.rows[0]!.suspend_reason).toBe('hitl_pending');
 
-      const approval = await pool.query(
-        `SELECT step_id, status, approver_user_id FROM agent.workflow_approvals WHERE run_id = $1`,
-        [runId],
+      const approval = await pollQuery(
+        () =>
+          pool.query(
+            `SELECT step_id, status, approver_user_id FROM agent.workflow_approvals WHERE run_id = $1`,
+            [runId],
+          ),
+        (res) => (res.rowCount ?? 0) === 1,
       );
       expect(approval.rowCount).toBe(1);
       expect(approval.rows[0]!.status).toBe('pending');
@@ -163,7 +200,9 @@ describe('lifecycle hook wiring', () => {
         runId,
         data: { workflowId: 'agent.x' },
       });
-      await new Promise((r) => setTimeout(r, 50));
+      // Negative assertion: nothing should ever be written, so a short settle wait
+      // is appropriate here (there is no row to poll for).
+      await new Promise((r) => setTimeout(r, 100));
       const r = await pool.query(
         `SELECT count(*)::int AS n FROM agent.workflow_runs WHERE run_id = $1`,
         [runId],
