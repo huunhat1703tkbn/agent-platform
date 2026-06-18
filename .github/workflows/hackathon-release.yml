@@ -145,6 +145,21 @@ jobs:
             set -euo pipefail
             echo "=== Deploying $GITHUB_REPO@$GITHUB_REF_NAME tag=$IMAGE_TAG ==="
 
+            # ── Swap ──────────────────────────────────────────────────────────────
+            # The 4 GB host runs postgres + server + worker + web + proxy. The server
+            # (Mastra + every module) spikes memory at boot and can be OOM-killed —
+            # which surfaces as "container seta-server-1 is unhealthy". A 4 GB swapfile
+            # absorbs the boot-time spike. Idempotent: created once, persists on the host.
+            if ! sudo swapon --show | grep -q '/swapfile'; then
+              echo "=== Creating 4G swapfile ==="
+              sudo fallocate -l 4G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=4096
+              sudo chmod 600 /swapfile
+              sudo mkswap /swapfile
+              sudo swapon /swapfile
+              grep -q '/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab > /dev/null
+            fi
+            sudo swapon --show || true
+
             aws ecr get-login-password --region "$AWS_REGION" \
               | docker login --username AWS --password-stdin "$ECR_REGISTRY"
 
@@ -279,6 +294,30 @@ jobs:
             echo "✅ Smoke test passed"
 
             echo "=== Deploy complete: $IMAGE_TAG ==="
+
+      # On failure (e.g. a container never goes healthy), pull the diagnostics off
+      # the EC2 into the Actions log so we don't need manual SSH to see why.
+      - name: Diagnostics on failure
+        if: failure()
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host:     ${{ vars.EC2_HOST }}
+          username: ${{ vars.EC2_USER || 'ubuntu' }}
+          key:      ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          command_timeout: 5m
+          script: |
+            echo "=== docker ps -a ==="
+            docker ps -a || true
+            echo "=== free -m ==="
+            free -m || true
+            echo "=== server state (exit code / OOMKilled) ==="
+            docker inspect -f 'exit={{.State.ExitCode}} oom={{.State.OOMKilled}} status={{.State.Status}}' seta-server-1 2>/dev/null || true
+            echo "=== docker logs seta-server-1 (tail 200) ==="
+            docker logs --tail 200 seta-server-1 2>&1 || true
+            echo "=== docker logs seta-worker-1 (tail 50) ==="
+            docker logs --tail 50 seta-worker-1 2>&1 || true
+            echo "=== dmesg OOM lines ==="
+            sudo dmesg 2>/dev/null | grep -i -E 'killed process|out of memory' | tail -10 || true
 
       - name: Job summary
         if: success()
