@@ -83,8 +83,11 @@ export function buildMemory(opts: {
   }
 
   const vector = getRecallVector(opts.databaseUrl);
+  // `|| default` (not `??`) so an empty/blank EMBED_MODEL falls back too — Docker
+  // Compose injects `EMBED_MODEL: ${EMBED_MODEL:-}` as "" (not undefined) when unset,
+  // and ModelRouterEmbeddingModel("") throws "Invalid model string format", crash-looping boot.
   const embedder = new ModelRouterEmbeddingModel(
-    process.env.EMBED_MODEL ?? 'openai/text-embedding-3-small',
+    process.env.EMBED_MODEL?.trim() || 'openai/text-embedding-3-small',
   );
   const memoryConfig: MemoryConfig = {
     ...baseOpts,

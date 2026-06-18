@@ -212,6 +212,7 @@ jobs:
             SESSION_COOKIE_SAMESITE=strict
             CORS_ORIGINS=https://$APP_DOMAIN
             OPENAI_API_KEY=$OPENAI_API_KEY
+            EMBED_MODEL=openai/text-embedding-3-small
             CRYPTO_KEY_PROVIDER=env
             CRYPTO_LOCAL_MASTER_KEY=$CRYPTO_LOCAL_MASTER_KEY
             EVENTS_RETENTION_DAYS=30
