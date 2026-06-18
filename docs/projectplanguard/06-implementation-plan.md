@@ -74,13 +74,26 @@ Deterministic-first: get the numbers exact before any LLM.
 
 ## P2 — Benchmark + Synthesis + HITL (Jun 18–20)
 
-- [ ] Embed DS05 (+ DS04 aggregates) into `pmo.history_embeddings` via `@seta/shared-embeddings`; `apps/cli` backfill.
-- [ ] `findSimilarProjects(planId)` — `@seta/shared-retrieval` `Retriever`, outlier exclusion (F-06).
-- [ ] `velocityComparator(planId)` — N07/N08/N09 deviation math.
-- [ ] **Synthesis & Recommendation** sub-agent (reasoning tier): roll-up §5, cross-dimension conflict, `recommend_engine` drafting → DS07 object ([05 §6](05-feasibility-rules-and-ds07.md)).
+> **✅ Status (built 2026-06-18):** Deterministic Benchmark + Synthesis + HITL write landed in
+> `packages/pmo/src/backend/domain/` (`benchmark.ts`, `synthesis.ts`, `save-review-report.ts`).
+> `buildReviewReport(planId)` composes all pillars into the DS07 object and applies the §5 roll-up
+> incl. the cross-dimension conflict rule; verified vs ground truth (PLAN-002 → "Not feasible (Red)",
+> PLAN-001 → "Feasible (Green)") and F-05/F-06. `saveReviewReport` writes `review_report` + emits
+> `pmo.report.issued` in one outbox transaction (HITL `needsApproval` on the `pmo_saveReviewReport`
+> tool). 46 pmo tests pass; full `pnpm typecheck` + `pnpm lint` green repo-wide.
+>
+> **Remaining (next chunk):** the Mastra `pmo-review` LLM orchestrator + sub-agents wrapping this
+> deterministic engine, vector-similarity benchmarking (currently a deterministic cohort-by-type),
+> and the apps/server orchestration wiring. The DS07 deliverable is fully producible today via
+> `buildReviewReport` / `pmo_saveReviewReport`.
+
+- [ ] Embed DS05 (+ DS04 aggregates) into `pmo.history_embeddings` via `@seta/shared-embeddings`; `apps/cli` backfill. *(deferred — deterministic cohort-by-type covers F-05/F-06 for now.)*
+- [x] `findSimilarProjects(planId)` — `selectCohort` by `project_type`, outlier + tiny-project exclusion (F-06). *(vector `Retriever` is the enhancement above.)*
+- [x] `velocityComparator(planId)` — `compareVelocity` deviation math + N07 on-time classify.
+- [x] **Synthesis & Recommendation** (deterministic): `buildReviewReport` roll-up §5, cross-dimension conflict, recommendations → DS07 object ([05 §6](05-feasibility-rules-and-ds07.md)). LLM reasoning tier wraps this next.
 - [ ] Orchestrator (`pmo-review`, staffing pattern): route → parallel Compliance+Feasibility → Benchmark → Synthesis → **post-step records HITL approval card** (DS07 preview).
-- [ ] `pmo.saveReviewReport` write (HITL `needsApproval: true`) → writes `ds07_report` row + emits `pmo.report.issued`.
-- [ ] Wire orchestration at `apps/server` composition root (inject `chatOrchestration`).
+- [x] `pmo.saveReviewReport` write (HITL `needsApproval: true`) → writes `review_report` row + emits `pmo.report.issued`.
+- [ ] Wire orchestration at `apps/server` composition root (inject `chatOrchestration`). *(read+write tools already registered via `reg.module`.)*
 
 ## P3 — UI + harden + tests (Jun 21–22)
 

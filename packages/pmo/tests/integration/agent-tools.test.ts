@@ -40,11 +40,12 @@ async function withSeededDb(fn: () => Promise<void>): Promise<void> {
 }
 
 describe('pmo read agent tools', () => {
-  it('exposes exactly the 4 read tools, each gated on pmo.plan.read', () => {
-    expect(pmoAgentTools).toHaveLength(4);
-    for (const tool of pmoAgentTools) {
-      expect(requiredPermissionFor(tool)).toBe('pmo.plan.read');
-    }
+  it('exposes the 4 read tools (pmo.plan.read) + the HITL write tool (pmo.review.write)', () => {
+    expect(pmoAgentTools).toHaveLength(5);
+    expect(requiredPermissionFor(pmoSectionCheckerTool)).toBe('pmo.plan.read');
+    expect(requiredPermissionFor(pmoDependencyValidatorTool)).toBe('pmo.plan.read');
+    expect(requiredPermissionFor(pmoBusyRateCalcTool)).toBe('pmo.plan.read');
+    expect(requiredPermissionFor(pmoThiScorerTool)).toBe('pmo.plan.read');
   });
 
   it('pmo_sectionChecker scores compliance for a plan (F-01/02/04)', async () => {

@@ -15,10 +15,14 @@ export default async function (): Promise<() => Promise<void>> {
 
   const pool = new Pool({ connectionString: `${handle.baseUrl}/${TEMPLATE}` });
   try {
-    // The pmo migration is self-contained (CREATE SCHEMA pmo + tables, no cross-schema FKs).
+    // pmo tables are self-contained; core provides core.events for the transactional
+    // outbox used by saveReviewReport (withEmit → core.emit).
     await runMigrations({
       pool,
-      modules: [{ name: 'pmo', dir: resolve(__dirname, '../drizzle/migrations') }],
+      modules: [
+        { name: 'core', dir: resolve(__dirname, '../../core/drizzle/migrations') },
+        { name: 'pmo', dir: resolve(__dirname, '../drizzle/migrations') },
+      ],
     });
   } finally {
     await pool.end();

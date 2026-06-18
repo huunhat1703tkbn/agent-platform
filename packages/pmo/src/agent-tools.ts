@@ -6,6 +6,8 @@ export {
   pmoAgentTools,
   pmoBusyRateCalcTool,
   pmoDependencyValidatorTool,
+  pmoReadTools,
+  pmoSaveReviewReportTool,
   pmoSectionCheckerTool,
   pmoThiScorerTool,
 } from './backend/agent-tools/index.ts';

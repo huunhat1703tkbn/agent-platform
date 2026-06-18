@@ -1,5 +1,14 @@
 export { resetPmoDb } from './backend/db/client.ts';
 export {
+  assessBenchmark,
+  type BenchmarkAssessment,
+  type CohortResult,
+  compareVelocity,
+  historicalVelocityMdMonth,
+  selectCohort,
+  type VelocityComparison,
+} from './backend/domain/benchmark.ts';
+export {
   type ComplianceGap,
   type ComplianceResult,
   type CustomSection,
@@ -32,8 +41,23 @@ export {
   ragWorst,
 } from './backend/domain/rag.ts';
 export {
+  getReviewReports,
+  type SaveReviewReportResult,
+  saveReviewReport,
+} from './backend/domain/save-review-report.ts';
+export {
   loadBundledDataset,
   type PmoDataset,
   type SeedResult,
   seedPmoDataset,
 } from './backend/domain/seed-dataset.ts';
+export {
+  buildReviewReport,
+  detectCrossDimensionConflict,
+  type FeasibilityStatus,
+  type Pillar,
+  type RecommendedAdjustment,
+  type ReviewReport,
+  type RiskWarning,
+  rollupFeasibilityStatus,
+} from './backend/domain/synthesis.ts';
