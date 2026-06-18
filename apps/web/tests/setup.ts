@@ -1,7 +1,11 @@
 import '@testing-library/jest-dom/vitest';
-import { cleanup } from '@testing-library/react';
+import { cleanup, configure } from '@testing-library/react';
 import { toHaveNoViolations } from 'jest-axe';
 import { afterEach, expect, vi } from 'vitest';
+
+// RTL's findBy* queries default to 1000ms — too tight for full component tests
+// (React Query + Router + MSW) on cold CI runners. Match the vitest testTimeout.
+configure({ asyncUtilTimeout: 10_000 });
 
 // Node ≥ 24 exposes an experimental opt-in localStorage that resolves to undefined
 // unless --localstorage-file is passed. Shim it with an in-memory implementation so

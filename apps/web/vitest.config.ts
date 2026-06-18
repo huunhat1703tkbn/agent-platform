@@ -16,5 +16,9 @@ export default defineConfig({
     setupFiles: ['./tests/setup.ts'],
     css: false,
     exclude: ['tests/e2e/**', 'node_modules/**'],
+    // Full component tests (React Query + TanStack Router + MSW) take longer on cold CI
+    // runners than vitest's 5s default. 20s gives loaded runners headroom without masking
+    // genuine hangs.
+    testTimeout: 20_000,
   },
 });
