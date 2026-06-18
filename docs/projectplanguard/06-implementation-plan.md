@@ -45,14 +45,30 @@ Phased build to the **23 Jun submission**. Today = 2026-06-12 (~11 days). Maps t
 
 Deterministic-first: get the numbers exact before any LLM.
 
-- [ ] `pmo` domain functions (pure, unit-tested vs [05](05-feasibility-rules-and-ds07.md)):
-  - `scoreCompliance(planId)` — DS06 × DS02 weights, custom-exclusion, S07-missing default.
-  - `computeBusyRate(planId)` / `computeCapacityGap(planId)` — N01 via DS03/DS08.
-  - `validateDependencies(planId)` — cycle detection + order violations from DS01.
-  - `computeThi(planId)` — N10.
+> **✅ Status (built 2026-06-18):** Deterministic core landed in `packages/pmo/src/backend/domain/`
+> (`rag.ts`, `compliance.ts`, `dependencies.ts`, `feasibility.ts`), exported from the public surface.
+> Verify green: pmo typecheck, full `pnpm lint` (depcruise/styles/raw-sql/boundaries/rbac-coverage/biome),
+> 23 tests pass — 16 unit (pure RAG/compliance/dependency) + 6 integration vs Answer_Key on real
+> Postgres (testcontainers, template `platform_template_pmo`) + 1 contract. Findings reproduced:
+> F-01 (S07 Missing→High gap + risk-pillar-default), F-02 (S05/S08 Weak→Medium), F-03 (peak busy
+> 135% + member 125% + THI 9% all Red), F-04 (EVM custom→flag, not a gap), F-05 (PLAN-001 100% /
+> acyclic / Green), F-1C (E07↔E08 cycle via Tarjan SCC + deploy-before-test order violation).
+> Note: `peak_role_busy_rate_pct` and `thi_pct` are DS07 header metrics (not derivable from the
+> normalised raw sheets) — the deterministic layer classifies them via N01/N10, while per-member
+> busy rate is computed directly from DS03.
+>
+> **Follow-ups (next chunk):** expose the 4 read agent tools (blocked on replacing the placeholder
+> RBAC with real perms mirrored into `shared-rbac/inventory.ts` + parity test); then Compliance +
+> Feasibility sub-agents.
+
+- [x] `pmo` domain functions (pure, unit-tested vs [05](05-feasibility-rules-and-ds07.md)):
+  - [x] `scoreCompliance(planId)` — DS06 × DS02 weights, custom-exclusion, S07-missing default.
+  - [x] `assessBusyRate(planId)` — N01 per-member (DS03) + role peak (DS07). Capacity-gap (DS08) deferred to Synthesis.
+  - [x] `validateDependencies(projectId)` — cycle detection (Tarjan SCC) + phase-order violations from DS01.
+  - [x] `assessThi(planId)` — N10.
 - [ ] Expose as agent tools: `pmo_sectionChecker`, `pmo_busyRateCalc`, `pmo_dependencyValidator`, `pmo_thiScorer` (read tools; forward `ctx.abortSignal`).
 - [ ] Compliance + Feasibility sub-agents (Compliance hybrid for semantic matching; Feasibility deterministic).
-- [ ] **Integration tests vs Answer_Key** F-01, F-02, F-03, F-1C, F-05 (real Postgres via testcontainers).
+- [x] **Integration tests vs Answer_Key** F-01, F-02, F-03, F-1C, F-05 (real Postgres via testcontainers).
 
 ## P2 — Benchmark + Synthesis + HITL (Jun 18–20)
 
