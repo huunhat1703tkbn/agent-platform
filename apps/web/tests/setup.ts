@@ -3,6 +3,21 @@ import { cleanup, configure } from '@testing-library/react';
 import { toHaveNoViolations } from 'jest-axe';
 import { afterEach, expect, vi } from 'vitest';
 
+// In happy-dom tests, assistant-ui's RemoteThreadListRuntime polls
+// /api/agent/v1/threads on every mount. Tests with `onUnhandledRequest: 'bypass'`
+// let this fall through to the actual network (localhost:3000 → ECONNREFUSED).
+// Node 24 crashes the vitest worker process on unhandled AggregateError rejections,
+// causing exit 1 even when all test assertions pass. Suppress these specifically.
+process.on('unhandledRejection', (reason) => {
+  if (
+    reason instanceof AggregateError &&
+    (reason as AggregateError & { code?: string }).code === 'ECONNREFUSED'
+  ) {
+    return;
+  }
+  throw reason;
+});
+
 // RTL's findBy* queries default to 1000ms — too tight for full component tests
 // (React Query + Router + MSW) on cold CI runners. Match the vitest testTimeout.
 configure({ asyncUtilTimeout: 10_000 });
