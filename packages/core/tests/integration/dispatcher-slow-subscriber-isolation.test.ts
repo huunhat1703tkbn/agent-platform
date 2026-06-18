@@ -5,12 +5,22 @@ import { startDispatcher } from '../../src/runtime/dispatcher/index.ts';
 import { waitFor, withCoreTestDb } from '../helpers.ts';
 
 describe('dispatcher per-subscriber isolation', () => {
-  it('slow subscriber does not block fast one within one wall-clock window', async () => {
+  it('slow subscriber does not block the fast one', async () => {
     await withCoreTestDb(async ({ pool }) => {
       resetCoreDb();
 
       let slowSeen = 0;
       let fastSeen = 0;
+
+      // The slow subscriber parks in its first handler until the test releases it. This makes
+      // the assertion deterministic and independent of runner speed (no wall-clock race): an
+      // isolated dispatcher lets the fast subscriber drain every event while slow sits blocked
+      // in handler #1, whereas a serialized one (old Promise.all single-flight tick) would gate
+      // fast behind the blocked slow handler, stalling it at the first event.
+      let releaseSlow!: () => void;
+      const slowGate = new Promise<void>((resolve) => {
+        releaseSlow = resolve;
+      });
 
       const slowSub = {
         subscription: 'test.iso.slow',
@@ -18,7 +28,7 @@ describe('dispatcher per-subscriber isolation', () => {
         eventVersion: 1,
         handler: async () => {
           slowSeen += 1;
-          await new Promise((r) => setTimeout(r, 300));
+          await slowGate;
         },
       };
       const fastSub = {
@@ -50,16 +60,16 @@ describe('dispatcher per-subscriber isolation', () => {
           }
         });
 
-        // Isolation proof: fast finishes all EVENTS within a tight window. If the dispatcher
-        // serialized subscribers (old Promise.all single-flight tick), fast would be gated
-        // behind slow's 300ms handler and this waitFor would time out first.
-        await waitFor(() => fastSeen === EVENTS, 1_500);
+        // Fast drains the whole batch while slow is parked. The timeout is generous on purpose —
+        // a slow/loaded runner only needs more wall-clock, not a tighter race. A serialized
+        // dispatcher would stall fast behind the blocked slow handler and trip this timeout.
+        await waitFor(() => fastSeen === EVENTS, 10_000);
         expect(fastSeen).toBe(EVENTS);
-        // Slow must still be lagging — it cannot have kept pace with fast. The exact count
-        // depends on runner speed (1 handler per ~300ms), so assert the invariant, not a
-        // brittle constant: slow processed strictly fewer than the full batch.
-        expect(slowSeen).toBeLessThan(EVENTS);
+        // Slow never advanced past its first (still-blocked) handler — proof it ran independently
+        // of fast rather than in lock-step with it.
+        expect(slowSeen).toBe(1);
       } finally {
+        releaseSlow();
         await d.shutdown(10_000);
       }
     });
