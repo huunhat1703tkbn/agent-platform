@@ -1,0 +1,35 @@
+{
+  "name": "@seta/pmo-review",
+  "version": "0.0.1",
+  "private": true,
+  "description": "PMO review orchestrator — the ProjectPlanGuard multi-agent chat brain. Composes the pmo module's deterministic engine (compliance, feasibility, benchmark, synthesis) behind an LLM orchestrator with a HITL DS07 issuance gate.",
+  "type": "module",
+  "setaTier": "orchestrator",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "lint": "eslint . --no-error-on-unmatched-pattern",
+    "typecheck": "tsc -b --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@seta/shared-config": "workspace:^",
+    "@seta/shared-testing": "workspace:^",
+    "@types/node": "^25.9.3",
+    "@types/pg": "^8.20.0",
+    "pg": "^8.21.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
+  },
+  "dependencies": {
+    "@mastra/core": "^1.42.0",
+    "@mastra/observability": "^1.14.1",
+    "@seta/agent-sdk": "workspace:^",
+    "@seta/pmo": "workspace:^",
+    "@seta/shared-db": "workspace:^",
+    "@seta/shared-orchestration": "workspace:*",
+    "zod": "^4.4.3"
+  }
+}

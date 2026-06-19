@@ -69,7 +69,7 @@ Deterministic-first: get the numbers exact before any LLM.
   - [x] `validateDependencies(projectId)` — cycle detection (Tarjan SCC) + phase-order violations from DS01.
   - [x] `assessThi(planId)` — N10.
 - [x] Expose as agent tools: `pmo_sectionChecker`, `pmo_busyRateCalc`, `pmo_dependencyValidator`, `pmo_thiScorer` (read tools).
-- [ ] Compliance + Feasibility sub-agents (Compliance hybrid for semantic matching; Feasibility deterministic).
+- [x] Compliance + Feasibility sub-agents (+ Benchmark + Synthesis) — deterministic `SpecializedAgentSpec`s in `packages/pmo-review/`, each wrapping the pmo engine with a trust envelope.
 - [x] **Integration tests vs Answer_Key** F-01, F-02, F-03, F-1C, F-05 (real Postgres via testcontainers).
 
 ## P2 — Benchmark + Synthesis + HITL (Jun 18–20)
@@ -82,18 +82,32 @@ Deterministic-first: get the numbers exact before any LLM.
 > `pmo.report.issued` in one outbox transaction (HITL `needsApproval` on the `pmo_saveReviewReport`
 > tool). 46 pmo tests pass; full `pnpm typecheck` + `pnpm lint` green repo-wide.
 >
-> **Remaining (next chunk):** the Mastra `pmo-review` LLM orchestrator + sub-agents wrapping this
-> deterministic engine, vector-similarity benchmarking (currently a deterministic cohort-by-type),
-> and the apps/server orchestration wiring. The DS07 deliverable is fully producible today via
-> `buildReviewReport` / `pmo_saveReviewReport`.
+> **✅ Update (built 2026-06-19):** the Mastra `pmo-review` LLM orchestrator landed as a new
+> orchestrator-tier package `packages/pmo-review/` (chat-only; no schema/registry state). Four
+> deterministic specialist sub-agents (`pmo.compliance` / `pmo.feasibility` / `pmo.benchmark` /
+> `pmo.synthesis`) wrap the pmo engine through a `PmoReviewPort` (DI boundary; adapters bind the
+> `@seta/pmo` public surface) and attach a trust envelope (reasoning trace + DS-row citations +
+> confidence). The LLM orchestrator (`pmo.reviewOrchestrator`, fast tier, per-turn Mastra `Agent`
+> in a storage-backed Mastra for native-suspend resume) delegates via tools
+> (`pmo_checkCompliance` / `pmo_assessFeasibility` / `pmo_benchmarkVelocity` / `pmo_synthesizeReview`)
+> and the `pmo_reviewPlan` HITL composite — first pass builds the DS07 draft + suspends with the
+> approval card; resume(approve) re-checks `pmo.review.write` and issues via `saveReviewReport`.
+> Wired at the apps/server composition root as `chatOrchestration` + `resumeOrchestration`
+> (replacing staffing as the conversational brain; staffing's worker taskList stays). 13 pmo-review
+> tests pass (4 sub-agent integration vs Answer_Key on real PG, 4 HITL-composite unit, 5 orchestrator
+> assembly via the runAgent seam); full `pnpm typecheck` + `pnpm lint` green; agent (238) + server
+> (83) suites still green.
+>
+> **Remaining (enhancement):** vector-similarity benchmarking (currently a deterministic
+> cohort-by-type), edge/failure-case hardening, and a live visual pass for slides.
 
 - [ ] Embed DS05 (+ DS04 aggregates) into `pmo.history_embeddings` via `@seta/shared-embeddings`; `apps/cli` backfill. *(deferred — deterministic cohort-by-type covers F-05/F-06 for now.)*
 - [x] `findSimilarProjects(planId)` — `selectCohort` by `project_type`, outlier + tiny-project exclusion (F-06). *(vector `Retriever` is the enhancement above.)*
 - [x] `velocityComparator(planId)` — `compareVelocity` deviation math + N07 on-time classify.
 - [x] **Synthesis & Recommendation** (deterministic): `buildReviewReport` roll-up §5, cross-dimension conflict, recommendations → DS07 object ([05 §6](05-feasibility-rules-and-ds07.md)). LLM reasoning tier wraps this next.
-- [ ] Orchestrator (`pmo-review`, staffing pattern): route → parallel Compliance+Feasibility → Benchmark → Synthesis → **post-step records HITL approval card** (DS07 preview).
+- [x] Orchestrator (`pmo-review`, staffing pattern): LLM orchestrator delegates to the 4 specialist sub-agents; `pmo_synthesizeReview` composes the DS07; `pmo_reviewPlan` composite **suspends with the HITL approval card** (DS07 preview) and issues on approve.
 - [x] `pmo.saveReviewReport` write (HITL `needsApproval: true`) → writes `review_report` row + emits `pmo.report.issued`.
-- [ ] Wire orchestration at `apps/server` composition root (inject `chatOrchestration`). *(read+write tools already registered via `reg.module`.)*
+- [x] Wire orchestration at `apps/server` composition root (inject `chatOrchestration` + `resumeOrchestration`).
 
 ## P3 — UI + harden + tests (Jun 21–22)
 

@@ -22,6 +22,7 @@ import { registerNotificationsContributions } from '@seta/notifications/register
 import { assignTask } from '@seta/planner';
 import { registerPlannerContributions } from '@seta/planner/register';
 import { registerPmoContributions } from '@seta/pmo/register';
+import { buildPmoReviewOrchestrationRuntime, makePmoReviewPort } from '@seta/pmo-review';
 import { createCrypto, createKeyProviderFromEnv, parseCryptoEnv } from '@seta/shared-crypto';
 import { closePools, getPool, initPools } from '@seta/shared-db';
 import { resolveEmbeddingProvider } from '@seta/shared-embeddings';
@@ -161,6 +162,19 @@ const staffingOrchestration = buildStaffingOrchestrationRuntime({
 SpecializedAgentRegistry.freeze();
 OrchestrationRegistry.freeze();
 
+// ProjectPlanGuard (PMO-01): the conversational brain for this deployment is the
+// pmo-review orchestrator, which composes the pmo module's deterministic engine
+// (compliance / feasibility / benchmark / synthesis) behind a HITL DS07 gate.
+// Chat-only — it owns no schema/registry state, so it shares the same Mastra
+// store as the engine (cross-instance native-suspend resume) without touching
+// the frozen kernel registries above. apps/server is the only layer that may
+// bind the pmo public surface (the port) into the engine.
+const pmoReviewOrchestration = buildPmoReviewOrchestrationRuntime({
+  port: makePmoReviewPort(),
+  resolveModel: () => resolveModel('auto', { tierHint: 'fast' }).model,
+  mastraStorage,
+});
+
 // Build the agent engine up front so subscriberBuilders contributed by
 // orchestrator modules (e.g. staffing) can be constructed against the live
 // Mastra instance before the dispatcher starts.
@@ -172,13 +186,13 @@ const agent = registerAgent({
   // Mastra and the per-turn orchestrator Mastra share one physical store.
   mastraStorage,
   log: log.child({ subsystem: 'agent' }),
-  // The chat runtime: every chat turn streams through the staffing
-  // orchestration's streaming entrypoint. apps/server is the only layer that
-  // can bind the staffing runtime to the engine surface.
-  chatOrchestration: staffingOrchestration.runStream,
+  // The chat runtime: every chat turn streams through the ProjectPlanGuard
+  // (pmo-review) orchestration's streaming entrypoint. apps/server is the only
+  // layer that can bind the pmo runtime to the engine surface.
+  chatOrchestration: pmoReviewOrchestration.runStream,
   // Native-suspend HITL resume: POST /chat/resume re-enters the suspended
-  // proposeAssignment composite via resumeStream. Same composition-root binding.
-  resumeOrchestration: staffingOrchestration.runResume,
+  // reviewPlan composite (DS07 issuance) via resumeStream. Same binding.
+  resumeOrchestration: pmoReviewOrchestration.runResume,
   // Chat attachments: apps/server is the only layer that can import the
   // @seta/knowledge consume/mark functions into the engine surface.
   consumeThreadAttachments: async ({ tenantId, threadId, query }) => {
