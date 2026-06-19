@@ -53,6 +53,7 @@ function makeFakePort(overrides: Partial<PmoReviewPort> = {}): PmoReviewPort {
       { planId: 'PLAN-001', projectName: 'Alpha' },
       { planId: 'PLAN-002', projectName: 'Beta' },
     ]),
+    describePlan: vi.fn(async () => null),
     compliance: vi.fn(),
     feasibility: vi.fn(),
     benchmark: vi.fn(),

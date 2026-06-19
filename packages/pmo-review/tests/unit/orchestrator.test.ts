@@ -111,6 +111,26 @@ describe('pmo-review orchestrator assembly', () => {
     expect(out.trust.confidenceScore).toBe(0.95);
   });
 
+  it('describe-project question → { message } from prose, not a review/issue', async () => {
+    const agent = make(
+      [
+        {
+          payload: {
+            toolName: 'pmo_describePlan',
+            result: { planId: 'PLAN-002', projectName: 'Energent AI', taskCount: 10, phases: [] },
+          },
+        },
+      ],
+      [{ payload: { toolName: 'pmo_describePlan', args: { planId: 'PLAN-002' } } }],
+      'PLAN-002 (Energent AI) is a data-platform project with 10 tasks.',
+    );
+    const out = await agent.run({ userText: 'describe this project', taskId: null }, ctx);
+
+    expect(out.result.message).toContain('Energent AI');
+    expect(out.result.review).toBeUndefined();
+    expect(out.result.issued).toBeUndefined();
+  });
+
   it('targeted dimension question → { message } from the LLM prose', async () => {
     const agent = make(
       [

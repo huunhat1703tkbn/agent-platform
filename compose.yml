@@ -143,6 +143,11 @@ services:
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-}
       OLLAMA_API_KEY: ${OLLAMA_API_KEY:-}
       EMBED_MODEL: ${EMBED_MODEL:-}
+      # Team S3 bucket for exporting issued DS07 reports (pmo.report.issued
+      # subscriber, worker runtime). Unset → export is a no-op. Region defaults
+      # to the deploy's AWS_REGION; creds come from the EC2 instance role.
+      PMO_REPORT_S3_BUCKET: ${PMO_REPORT_S3_BUCKET:-}
+      S3_REGION: ${S3_REGION:-}
     expose:
       - "9464"  # Prometheus metrics scrape port
     networks:
@@ -194,6 +199,11 @@ services:
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-}
       OLLAMA_API_KEY: ${OLLAMA_API_KEY:-}
       EMBED_MODEL: ${EMBED_MODEL:-}
+      # Team S3 bucket for exporting issued DS07 reports (pmo.report.issued
+      # subscriber, worker runtime). Unset → export is a no-op. Region defaults
+      # to the deploy's AWS_REGION; creds come from the EC2 instance role.
+      PMO_REPORT_S3_BUCKET: ${PMO_REPORT_S3_BUCKET:-}
+      S3_REGION: ${S3_REGION:-}
     networks:
       - seta-internal
       - seta-edge  # egress for OpenAI / external embedding APIs

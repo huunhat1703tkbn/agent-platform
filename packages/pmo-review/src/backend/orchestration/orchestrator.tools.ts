@@ -172,10 +172,54 @@ export function makeOrchestratorTools(deps: OrchestratorToolDeps) {
     },
   });
 
+  const pmo_describePlan = defineAgentTool({
+    id: 'pmo_describePlan',
+    name: 'Describe Plan',
+    description:
+      'Get a descriptive overview of a plan/project — name, type, scope (task count + phases), ' +
+      'team size, effort and duration. Use this for "describe this project", "what is PLAN-X", ' +
+      '"tell me about this plan". It does NOT compute a feasibility verdict and does NOT issue ' +
+      'anything.',
+    input: PlanArg,
+    output: z.object({
+      planId: z.string(),
+      projectName: z.string().nullable(),
+      projectType: z.string().nullable(),
+      planSet: z.string().nullable(),
+      effortMd: z.number().nullable(),
+      durationMonths: z.number().nullable(),
+      velocityMdMonth: z.number().nullable(),
+      teamSize: z.number().nullable(),
+      riskCount: z.number().nullable(),
+      taskCount: z.number(),
+      phases: z.array(z.string()),
+    }),
+    execute: async ({ planId }) => {
+      assertPermission(ctx, 'pmo.plan.read');
+      await assertKnownPlan(port, ctx.tenantId, planId);
+      const o = await port.describePlan({ tenantId: ctx.tenantId, planId });
+      if (!o) throw new Error(`Plan "${planId}" not found.`);
+      return {
+        planId: o.plan_id,
+        projectName: o.project_name,
+        projectType: o.project_type,
+        planSet: o.plan_set,
+        effortMd: o.effort_md,
+        durationMonths: o.duration_months,
+        velocityMdMonth: o.velocity_md_month,
+        teamSize: o.team_size,
+        riskCount: o.risk_count,
+        taskCount: o.task_count,
+        phases: o.phases,
+      };
+    },
+  });
+
   const pmo_reviewPlan = makeReviewPlanTool({ port, ctx });
 
   return {
     pmo_listPlans,
+    pmo_describePlan,
     pmo_checkCompliance,
     pmo_assessFeasibility,
     pmo_benchmarkVelocity,

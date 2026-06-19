@@ -11,6 +11,7 @@ import {
   assessThi,
   buildReviewReport,
   type DependencyResult,
+  getPlanOverview,
   listPlans,
   saveReviewReport,
   scoreCompliance,
@@ -31,6 +32,8 @@ export function makePmoReviewPort(): PmoReviewPort {
       const plans = await listPlans({ tenantId });
       return plans.map((p) => ({ planId: p.plan_id, projectName: p.project_name }));
     },
+
+    describePlan: ({ tenantId, planId }) => getPlanOverview({ tenantId, planId }),
 
     compliance: ({ tenantId, planId }) => scoreCompliance({ tenantId, planId }),
 

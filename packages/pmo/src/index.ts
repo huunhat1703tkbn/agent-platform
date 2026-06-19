@@ -35,8 +35,10 @@ export {
 } from './backend/domain/feasibility.ts';
 export {
   getLatestReportStatus,
+  getPlanOverview,
   listPlans,
   type PlanListItem,
+  type PlanOverview,
 } from './backend/domain/plans.ts';
 export {
   classifyBusyRate,

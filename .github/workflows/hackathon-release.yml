@@ -129,6 +129,9 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_ECR_SECRET_ACCESS_KEY }}
           APP_DOMAIN:            ${{ vars.APP_DOMAIN }}
           OPENAI_API_KEY:        ${{ secrets.OPENAI_API_KEY }}
+          # Team's own (read/write) S3 bucket — issued DS07 reports are exported here
+          # by the pmo.report.issued subscriber, via the EC2 instance role (no keys).
+          TEAM_S3_BUCKET:        ${{ vars.TEAM_S3_BUCKET || 'hackathon-team-1-assets-033484686020' }}
           # ACME_EMAIL is optional — falls back to organizer address for cert notifications.
           ACME_EMAIL:            ${{ vars.ACME_EMAIL || 'devops@seta-international.vn' }}
           # Passed to EC2 so compose.yml / Traefik configs are fetched from the fork's own
@@ -140,7 +143,7 @@ jobs:
           username:        ${{ vars.EC2_USER || 'ubuntu' }}
           key:             ${{ secrets.EC2_SSH_PRIVATE_KEY }}
           command_timeout: 25m
-          envs:            ECR_REGISTRY,ECR_REPOSITORY,IMAGE_TAG,AWS_REGION,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY,APP_DOMAIN,OPENAI_API_KEY,ACME_EMAIL,GITHUB_REPO,GITHUB_REF_NAME
+          envs:            ECR_REGISTRY,ECR_REPOSITORY,IMAGE_TAG,AWS_REGION,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY,APP_DOMAIN,OPENAI_API_KEY,TEAM_S3_BUCKET,ACME_EMAIL,GITHUB_REPO,GITHUB_REF_NAME
           script: |
             set -euo pipefail
             echo "=== Deploying $GITHUB_REPO@$GITHUB_REF_NAME tag=$IMAGE_TAG ==="
@@ -220,6 +223,8 @@ jobs:
             KNOWLEDGE_AV_REQUIRED=false
             MAILER_DEFAULT_TRANSPORT=dev-stub
             MAILER_DEFAULT_SENDER=noreply@$APP_DOMAIN
+            PMO_REPORT_S3_BUCKET=$TEAM_S3_BUCKET
+            S3_REGION=$AWS_REGION
             EOF
             sudo chown "$(id -u):$(id -g)" /opt/seta/.env
             chmod 600 /opt/seta/.env
