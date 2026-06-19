@@ -141,6 +141,10 @@ export function mountChatResumeRoute(app: Hono<AgentRouteEnv>, deps: AgentRouteD
         const run = await resumeOrchestration(resume, {
           tenantId: session.tenant_id,
           actorUserId: session.user_id,
+          // Forward the actor's resolved permissions so resume-time write tools
+          // can re-check RBAC (parity with the forward chat route). Without this
+          // a deny-by-default gate in the resumed tool always fails.
+          effectivePermissions: session.effective_permissions,
           threadId,
           mastraRunId,
           toolCallId,

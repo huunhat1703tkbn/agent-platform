@@ -13,7 +13,16 @@ import type {
 } from '@seta/pmo';
 import type { FeasibilityFindings } from './schemas.ts';
 
+/** A reviewable plan (DS07 summary row) — for listing + disambiguation. */
+export interface PlanSummary {
+  planId: string;
+  projectName: string | null;
+}
+
 export interface PmoReviewPort {
+  /** The plans under review (DS07 summary rows). Used to list options and to
+   *  validate a plan id before running a review (the clarification path). */
+  listPlans(input: { tenantId: string }): Promise<PlanSummary[]>;
   /** DS06 × DS02 weighted compliance, gaps, custom-section flags, S07-missing. */
   compliance(input: { tenantId: string; planId: string }): Promise<ComplianceResult>;
   /** Busy rate (DS03/DS07) + THI (N10) + dependency/timeline validation. */

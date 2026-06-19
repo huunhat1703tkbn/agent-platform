@@ -10,6 +10,7 @@ import {
   makeFeasibilityAgent,
   makeSynthesisAgent,
 } from '../../src/backend/orchestration/agents/index.ts';
+import { resolveKnownPlan } from '../../src/backend/orchestration/plan-guard.ts';
 
 const TENANT = '00000000-0000-0000-0000-0000000000ee';
 const USER = '00000000-0000-0000-0000-0000000000ff';
@@ -71,6 +72,19 @@ describe('pmo-review sub-agents (deterministic engine wrappers)', () => {
 
       expect(result.outliers_excluded).toContain('PRJ-H-199');
       expect(trust.reasoningTrace.length).toBeGreaterThan(0);
+    });
+  });
+
+  it('listPlans + resolveKnownPlan: real plans are known, a bogus id is not', async () => {
+    await withSeededDb(async () => {
+      const plans = await port.listPlans({ tenantId: TENANT });
+      expect(plans.map((p) => p.planId)).toContain('PLAN-002');
+
+      expect((await resolveKnownPlan(port, TENANT, 'PLAN-002')).known).toBe(true);
+
+      const bad = await resolveKnownPlan(port, TENANT, 'PLAN-999');
+      expect(bad.known).toBe(false);
+      expect(bad.available).toContain('PLAN-002');
     });
   });
 

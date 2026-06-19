@@ -27,6 +27,11 @@ const NO_DEPS: DependencyResult = {
 
 export function makePmoReviewPort(): PmoReviewPort {
   return {
+    async listPlans({ tenantId }) {
+      const plans = await listPlans({ tenantId });
+      return plans.map((p) => ({ planId: p.plan_id, projectName: p.project_name }));
+    },
+
     compliance: ({ tenantId, planId }) => scoreCompliance({ tenantId, planId }),
 
     async feasibility({ tenantId, planId }) {

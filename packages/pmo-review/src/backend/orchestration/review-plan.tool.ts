@@ -6,6 +6,7 @@ import {
 import { z } from 'zod';
 import { buildReviewApprovalCard } from './approval-card.ts';
 import { assertPermission } from './permissions.ts';
+import { resolveKnownPlan } from './plan-guard.ts';
 import type { PmoReviewPort } from './ports.ts';
 
 export interface ReviewPlanDeps {
@@ -26,6 +27,10 @@ const OutputSchema = z.object({
   issued: z.boolean(),
   reportId: z.string().optional(),
   feasibilityStatus: z.string().optional(),
+  /** Set when the plan id is not a reviewable plan — the LLM relays this and
+   *  offers `availablePlans` instead of presenting a degenerate report. */
+  unknownPlan: z.boolean().optional(),
+  availablePlans: z.array(z.string()).optional(),
 });
 
 const SuspendSchema = z.object({ card: z.unknown() });
@@ -76,8 +81,10 @@ export async function executeReviewPlan(
     };
   }
 
-  // ── First pass: build the DS07 draft, suspend with the approval card. ──
+  // ── First pass: validate the plan, build the DS07 draft, suspend with the card. ──
   assertPermission(ctx, 'pmo.review.read');
+  const { known, available } = await resolveKnownPlan(port, ctx.tenantId, input.planId);
+  if (!known) return { issued: false, unknownPlan: true, availablePlans: available };
   const draft = await port.synthesis({ tenantId: ctx.tenantId, planId: input.planId });
   const card = buildReviewApprovalCard({
     draft,

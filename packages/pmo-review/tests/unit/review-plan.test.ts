@@ -49,6 +49,10 @@ function fakeDraft(planId: string): ReviewReport {
 
 function makeFakePort(overrides: Partial<PmoReviewPort> = {}): PmoReviewPort {
   return {
+    listPlans: vi.fn(async () => [
+      { planId: 'PLAN-001', projectName: 'Alpha' },
+      { planId: 'PLAN-002', projectName: 'Beta' },
+    ]),
     compliance: vi.fn(),
     feasibility: vi.fn(),
     benchmark: vi.fn(),
@@ -72,6 +76,25 @@ const ctx = (perms: string[]): SpecializedAgentRunCtx => ({
 });
 
 describe('executeReviewPlan (HITL issue composite)', () => {
+  it('first pass: unknown plan → no draft, no suspend, returns the available plans', async () => {
+    const port = makeFakePort();
+    const suspend = vi.fn();
+    const toolCtx = { agent: { suspend, resumeData: undefined } } as never;
+
+    const out = await executeReviewPlan({ planId: 'PLAN-999' }, toolCtx, {
+      port,
+      ctx: ctx(['pmo.review.read', 'pmo.review.write']),
+    });
+
+    expect(out).toEqual({
+      issued: false,
+      unknownPlan: true,
+      availablePlans: ['PLAN-001', 'PLAN-002'],
+    });
+    expect(port.synthesis).not.toHaveBeenCalled();
+    expect(suspend).not.toHaveBeenCalled();
+  });
+
   it('first pass: builds a DS07 draft and suspends with the approval card (no write)', async () => {
     const port = makeFakePort();
     const suspend = vi.fn();

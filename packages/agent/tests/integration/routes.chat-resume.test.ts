@@ -131,7 +131,12 @@ type CapturedResume = {
     alternateIndices?: number[];
     note?: string;
   };
-  ctx: { mastraRunId: string; toolCallId?: string; threadId?: string };
+  ctx: {
+    mastraRunId: string;
+    toolCallId?: string;
+    threadId?: string;
+    effectivePermissions?: ReadonlySet<string>;
+  };
 };
 
 /** Fake resumeOrchestration that records (resume, ctx) and yields a final event.
@@ -139,7 +144,7 @@ type CapturedResume = {
 function makeFakeResume(captured: CapturedResume[]) {
   return async (
     resume: CapturedResume['resume'],
-    ctx: { mastraRunId: string; toolCallId?: string; threadId?: string },
+    ctx: CapturedResume['ctx'],
   ): Promise<ChatStreamRun> => {
     captured.push({ resume, ctx });
     return fakeChatRun();
@@ -229,6 +234,9 @@ describe('POST /api/agent/v1/chat/resume', () => {
       expect(captured[0]!.ctx.mastraRunId).toBe(mastraRunId);
       expect(captured[0]!.ctx.toolCallId).toBe('tc-1');
       expect(captured[0]!.ctx.threadId).toBe(threadId);
+      // The actor's resolved permissions must reach resume-time write tools so
+      // they can re-check RBAC (e.g. pmo.review.write on DS07 issuance).
+      expect(captured[0]!.ctx.effectivePermissions?.has('agent.workflow.approve')).toBe(true);
     });
   });
 

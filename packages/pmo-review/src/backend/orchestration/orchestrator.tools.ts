@@ -6,6 +6,7 @@ import {
 import type { BenchmarkAssessment, ComplianceResult, ReviewReport } from '@seta/pmo';
 import { z } from 'zod';
 import { assertPermission } from './permissions.ts';
+import { assertKnownPlan } from './plan-guard.ts';
 import type { PmoReviewPort } from './ports.ts';
 import { makeReviewPlanTool } from './review-plan.tool.ts';
 import { type FeasibilityFindings, SynthesisOutputSchema } from './schemas.ts';
@@ -62,6 +63,7 @@ export function makeOrchestratorTools(deps: OrchestratorToolDeps) {
     }),
     execute: async ({ planId }) => {
       assertPermission(ctx, 'pmo.plan.read');
+      await assertKnownPlan(port, ctx.tenantId, planId);
       const { result } = await compliance.run({ planId }, subCtx);
       return {
         planId,
@@ -91,6 +93,7 @@ export function makeOrchestratorTools(deps: OrchestratorToolDeps) {
     }),
     execute: async ({ planId }) => {
       assertPermission(ctx, 'pmo.plan.read');
+      await assertKnownPlan(port, ctx.tenantId, planId);
       const { result } = await feasibility.run({ planId }, subCtx);
       return {
         planId,
@@ -121,6 +124,7 @@ export function makeOrchestratorTools(deps: OrchestratorToolDeps) {
     }),
     execute: async ({ planId }) => {
       assertPermission(ctx, 'pmo.plan.read');
+      await assertKnownPlan(port, ctx.tenantId, planId);
       const { result } = await benchmark.run({ planId }, subCtx);
       return {
         planId,
@@ -145,14 +149,33 @@ export function makeOrchestratorTools(deps: OrchestratorToolDeps) {
     output: SynthesisOutputSchema,
     execute: async ({ planId }) => {
       assertPermission(ctx, 'pmo.review.read');
+      await assertKnownPlan(port, ctx.tenantId, planId);
       const { result } = await synthesis.run({ planId }, subCtx);
       return result;
+    },
+  });
+
+  const pmo_listPlans = defineAgentTool({
+    id: 'pmo_listPlans',
+    name: 'List Plans',
+    description:
+      'List the project plans available to review (id + project name). Use this when the user ' +
+      'has not named a plan, or to offer valid options after an unknown plan id.',
+    input: z.object({}),
+    output: z.object({
+      plans: z.array(z.object({ planId: z.string(), projectName: z.string().nullable() })),
+    }),
+    execute: async () => {
+      assertPermission(ctx, 'pmo.plan.read');
+      const plans = await port.listPlans({ tenantId: ctx.tenantId });
+      return { plans };
     },
   });
 
   const pmo_reviewPlan = makeReviewPlanTool({ port, ctx });
 
   return {
+    pmo_listPlans,
     pmo_checkCompliance,
     pmo_assessFeasibility,
     pmo_benchmarkVelocity,

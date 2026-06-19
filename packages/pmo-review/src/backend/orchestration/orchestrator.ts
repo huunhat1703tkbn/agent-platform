@@ -122,6 +122,15 @@ function instructionsText(): string {
     'pmo_checkCompliance (compliance %, gaps, custom sections, risk register), pmo_assessFeasibility',
     '(busy rate, THI, dependency cycles/order), or pmo_benchmarkVelocity (velocity vs cohort).',
     '',
+    'AMBIGUOUS / NO PLAN NAMED — if the user has not named a plan ("review my plan", "is it',
+    'feasible?"), call pmo_listPlans and ask them to pick one; do NOT guess a plan id. If a review',
+    'tool reports a plan is unknown / not found, do NOT present its output as a verdict — relay that',
+    'the plan is unknown and offer the valid ids (call pmo_listPlans if you need them).',
+    '',
+    'CONFIDENCE — when the review confidence is "low" (e.g. insufficient benchmark data), say so',
+    'explicitly: report the verdict but flag that the benchmark is data-starved rather than implying',
+    'certainty.',
+    '',
     'ISSUE THE REPORT — when the user asks to issue, approve, finalize, or save the DS07 report for',
     'a plan (e.g. "issue the report for PLAN-002", "approve this plan\'s review"): call',
     'pmo_reviewPlan(planId) ONCE. It runs the review and PAUSES for the PMO to confirm before',
@@ -377,6 +386,7 @@ function assemble(res: MastraToolSignals): OrchestratorResult {
   if (
     llmText &&
     ranAny(res, [
+      'pmo_listPlans',
       'pmo_checkCompliance',
       'pmo_assessFeasibility',
       'pmo_benchmarkVelocity',
