@@ -84,14 +84,16 @@ describe('pmo read agent tools', () => {
     });
   });
 
-  it('pmo_thiScorer flags THI 9% Red (F-03)', async () => {
+  it('pmo_thiScorer computes THI from DS01 (Testing effort / total): PLAN-002 = 65/426 ≈ 15.3% Green', async () => {
     await withSeededDb(async () => {
       const out = (await pmoThiScorerTool.execute?.({ planId: 'PLAN-002' }, ctx())) as {
         thi_pct: number;
         rag: string;
       };
-      expect(out.thi_pct).toBeCloseTo(9, 5);
-      expect(out.rag).toBe('Red');
+      // E06 (35) + E08 (30) Testing-phase effort over 426 total. The DS07 header (9%)
+      // is a reference with error — raw data wins (E2E acceptance testing is non-dev).
+      expect(out.thi_pct).toBe(15.3); // 65/426 = 15.258% → rounded to 1 dp
+      expect(out.rag).toBe('Green');
     });
   });
 });

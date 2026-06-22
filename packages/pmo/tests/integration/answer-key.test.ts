@@ -91,7 +91,7 @@ describe('ProjectPlanGuard deterministic core vs Answer_Key', () => {
     });
   });
 
-  it('PLAN-002 feasibility: peak busy ~135% Red + THI 9% Red (F-03)', async () => {
+  it('PLAN-002 feasibility: peak busy ~135% Red (F-03); THI computed from DS01 = 65/426 ≈ 15.3% Green', async () => {
     await withSeededDb(async () => {
       const busy = await assessBusyRate({ tenantId: TENANT, planId: 'PLAN-002' });
       expect(busy.peak_role_busy_rate_pct).toBeCloseTo(135, 5);
@@ -99,17 +99,20 @@ describe('ProjectPlanGuard deterministic core vs Answer_Key', () => {
       // member-level busy computed from DS03 (EMP-004 = 125%) is also Red.
       expect(busy.max_member_rag).toBe('Red');
 
+      // THI = Testing-phase effort / total effort (DS01), incl. E2E acceptance testing.
+      // 65/426 ≈ 15.3% → Green. The DS07 header (9%) is a reference with error.
       const thi = await assessThi({ tenantId: TENANT, planId: 'PLAN-002' });
-      expect(thi.thi_pct).toBeCloseTo(9, 5);
-      expect(thi.rag).toBe('Red');
+      expect(thi.thi_pct).toBe(15.3); // 65/426 = 15.258% → rounded to 1 dp
+      expect(thi.rag).toBe('Green');
     });
   });
 
-  it('PLAN-001 feasibility: busy 95% Green + THI 18% Green', async () => {
+  it('PLAN-001 feasibility: busy 95% Green + THI = 30/168 ≈ 17.9% Green', async () => {
     await withSeededDb(async () => {
       const busy = await assessBusyRate({ tenantId: TENANT, planId: 'PLAN-001' });
       expect(busy.peak_rag).toBe('Green');
       const thi = await assessThi({ tenantId: TENANT, planId: 'PLAN-001' });
+      expect(thi.thi_pct).toBe(17.9); // 30/168 = 17.857% → rounded to 1 dp
       expect(thi.rag).toBe('Green');
     });
   });

@@ -10,6 +10,7 @@
 import { and, eq } from 'drizzle-orm';
 import { pmoDb } from '../db/client.ts';
 import * as t from '../db/schema.ts';
+import { cohortOnTimeFromSchedule, computePlanVelocity } from './plan-metrics.ts';
 import { classifyOnTime, type RagStatus } from './rag.ts';
 
 export interface HistoryRow {
@@ -151,11 +152,20 @@ export async function assessBenchmark(input: {
     projectType,
   );
 
+  // Plan velocity is derived (Σ DS01 effort ÷ planned duration), not read from the
+  // DS07 header — same value, but computed from the raw sheets.
+  const planVelocity = await computePlanVelocity(input);
   const velocity = compareVelocity(
-    summary?.velocity_md_month ?? 0,
+    planVelocity.velocity_md_month ?? 0,
     cohort.cohort_avg_velocity_md_month,
   );
-  const onTime = summary?.on_time_history_pct ?? null;
+  // On-time history is derived from the cohort's schedule adherence (mean of
+  // min(1, planned/actual duration) over the same similar projects), NOT read from
+  // the DS07 header. Same cohort as the velocity comparison (outliers/tiny excluded).
+  const cohortRows = history.filter((r) =>
+    cohort.similar_projects.includes(r.historical_project_id),
+  );
+  const onTime = cohortOnTimeFromSchedule(cohortRows);
 
   return {
     plan_id: input.planId,

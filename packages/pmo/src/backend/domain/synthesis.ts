@@ -13,6 +13,7 @@ import { assessBenchmark, type BenchmarkAssessment } from './benchmark.ts';
 import { type ComplianceResult, scoreCompliance } from './compliance.ts';
 import { type DependencyResult, validateDependencies } from './dependencies.ts';
 import { assessBusyRate, assessThi, type BusyRateAssessment } from './feasibility.ts';
+import { computePlanVelocity } from './plan-metrics.ts';
 import type { RagStatus } from './rag.ts';
 
 export type FeasibilityStatus = 'Feasible (Green)' | 'Needs review (Yellow)' | 'Not feasible (Red)';
@@ -115,6 +116,9 @@ export async function buildReviewReport(input: {
   const projectId = summary?.project_id ?? null;
 
   const compliance = await scoreCompliance({ tenantId, planId });
+  // effort_md, duration_months and velocity are all derived from DS01 (Σ effort +
+  // the inclusive task-date span ÷ 28), not read from the DS07 header claims.
+  const planVelocity = await computePlanVelocity({ tenantId, planId });
   const busy = await assessBusyRate({ tenantId, planId });
   const thi = await assessThi({ tenantId, planId });
   const benchmark = await assessBenchmark({ tenantId, planId });
@@ -141,9 +145,9 @@ export async function buildReviewReport(input: {
     plan_id: planId,
     project_id: projectId,
     project_name: summary?.project_name ?? null,
-    effort_md: summary?.effort_md ?? null,
-    duration_months: summary?.duration_months ?? null,
-    velocity_md_month: summary?.velocity_md_month ?? null,
+    effort_md: planVelocity.effort_md,
+    duration_months: planVelocity.duration_months,
+    velocity_md_month: planVelocity.velocity_md_month,
     team_size: summary?.team_size ?? null,
     risk_count: summary?.risk_count ?? null,
     thi_pct: thi.thi_pct,

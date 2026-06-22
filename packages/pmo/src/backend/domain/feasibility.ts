@@ -5,7 +5,8 @@
  * Two complementary busy-rate signals:
  *  - per-member, computed directly from DS03.busy_rate (already summed across projects);
  *  - the role-level peak (`peak_role_busy_rate_pct`), a header metric on the DS07 summary.
- * THI is the DS07 summary's Non-dev_h/Total_h metric; both are classified against KPI norms.
+ * THI is computed from DS01 (Testing-phase effort ÷ total effort) — NOT read from the
+ * DS07 header, which is a reference with error. All signals are classified against KPI norms.
  */
 import { and, eq } from 'drizzle-orm';
 import { pmoDb } from '../db/client.ts';
@@ -79,12 +80,43 @@ export async function assessBusyRate(input: {
   };
 }
 
+const TESTING_PHASE = 'Testing';
+
+/**
+ * THI (N10): share of plan effort spent on Testing-phase (non-dev / QA) work —
+ * Σ Testing effort ÷ Σ total effort, as a percentage rounded to one decimal place.
+ * End-to-end acceptance testing is non-dev, so it counts. Pure; null when the plan
+ * has no effort to divide by.
+ */
+export function thiFromTasks(
+  tasks: { phase: string | null; effort_days: number | null }[],
+): number | null {
+  const total = tasks.reduce((acc, task) => acc + (task.effort_days ?? 0), 0);
+  if (total <= 0) return null;
+  const testing = tasks
+    .filter((task) => task.phase === TESTING_PHASE)
+    .reduce((acc, task) => acc + (task.effort_days ?? 0), 0);
+  return Math.round((testing / total) * 1000) / 10;
+}
+
 export async function assessThi(input: {
   tenantId: string;
   planId: string;
 }): Promise<ThiAssessment> {
-  const summary = await getSummary(pmoDb(), input.tenantId, input.planId);
-  const thi = summary?.thi_pct ?? null;
+  const db = pmoDb();
+  const summary = await getSummary(db, input.tenantId, input.planId);
+  const projectId = summary?.project_id ?? null;
+
+  const tasks = projectId
+    ? await db
+        .select({ phase: t.ds01Tasks.phase, effort_days: t.ds01Tasks.effort_days })
+        .from(t.ds01Tasks)
+        .where(
+          and(eq(t.ds01Tasks.tenant_id, input.tenantId), eq(t.ds01Tasks.project_id, projectId)),
+        )
+    : [];
+
+  const thi = thiFromTasks(tasks);
   return {
     plan_id: input.planId,
     thi_pct: thi,

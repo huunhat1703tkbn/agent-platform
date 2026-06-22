@@ -1,4 +1,14 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(node -e ' *)",
+      "Bash(pnpm exec *)",
+      "Bash(pnpm --filter @seta/pmo test -- --run trust)",
+      "Bash(pnpm --filter @seta/cli typecheck)",
+      "Bash(pnpm --filter @seta/pmo-review test)",
+      "Bash(pnpm --filter @seta/pmo --filter @seta/pmo-review typecheck)"
+    ]
+  },
   "enabledPlugins": {
     "context7@claude-plugins-official": true,
     "superpowers@claude-plugins-official": true,

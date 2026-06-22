@@ -59,7 +59,8 @@ describe('pmo-review sub-agents (deterministic engine wrappers)', () => {
 
       expect(result.busy.peak_rag).toBe('Red');
       expect(result.busy.peak_role_busy_rate_pct).toBeCloseTo(135, 5);
-      expect(result.thi.rag).toBe('Red');
+      // THI computed from DS01 (Testing/total = 15.3%) is Green; busy + cycle carry the Red.
+      expect(result.thi.rag).toBe('Green');
       expect(result.deps.has_cycle).toBe(true);
       expect(trust.confidenceScore).toBeGreaterThan(0);
     });
@@ -96,10 +97,12 @@ describe('pmo-review sub-agents (deterministic engine wrappers)', () => {
       expect(red.result.feasibility_status).toBe('Not feasible (Red)');
       expect(red.trust.confidenceScore).toBeGreaterThan(0);
 
-      const green = await agent.run({ planId: 'PLAN-001' }, ctx);
-      expect(green.result.feasibility_status).toBe('Feasible (Green)');
+      // PLAN-001 is clean (100% compliant, no gaps) but its span/30 velocity runs ~18%
+      // over the cohort → Benchmark Yellow → "Needs review (Yellow)" rather than Green.
+      const clean = await agent.run({ planId: 'PLAN-001' }, ctx);
+      expect(clean.result.feasibility_status).toBe('Needs review (Yellow)');
       // every claim is sourced: the report's pillars carry the cited dimensions
-      expect(green.trust.evidenceCitations.some((c) => c.id === 'PLAN-001')).toBe(true);
+      expect(clean.trust.evidenceCitations.some((c) => c.id === 'PLAN-001')).toBe(true);
     });
   });
 });

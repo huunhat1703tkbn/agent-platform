@@ -9,6 +9,16 @@ export {
   type VelocityComparison,
 } from './backend/domain/benchmark.ts';
 export {
+  assessRoleCapacity,
+  type CapacityGapAssessment,
+  canonicalRole,
+  computeRoleCapacityGap,
+  ROLE_ALIASES,
+  type RoleCapacityGap,
+  spreadEffortByMonth,
+  type TaskEffort,
+} from './backend/domain/capacity.ts';
+export {
   type ComplianceGap,
   type ComplianceResult,
   type CustomSection,
@@ -33,6 +43,20 @@ export {
   type MemberBusyRate,
   type ThiAssessment,
 } from './backend/domain/feasibility.ts';
+export {
+  cohortOnTimeFromSchedule,
+  computeOnTimeHistory,
+  computePlanVelocity,
+  computeScheduleRealism,
+  monthsSpan,
+  type OnTimeHistory,
+  type PlanVelocity,
+  planVelocityMdMonth,
+  type ScheduleRealism,
+  scheduleAdherence,
+  scheduleRealism,
+  sumEffortMd,
+} from './backend/domain/plan-metrics.ts';
 export {
   getLatestReportStatus,
   getPlanOverview,
