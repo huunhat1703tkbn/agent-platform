@@ -30,6 +30,18 @@ export function classifyOnTime(pct: number): RagStatus {
   return 'Yellow';
 }
 
+/**
+ * One-sided capacity-pressure band for a role's *projected peak* demand. Unlike N01
+ * (which flags under-utilisation <75% as Red for an individual member), a plan whose
+ * busiest role peaks low is simply over-staffed — not infeasible. Only over-allocation
+ * is a feasibility risk here: Green ≤110, Yellow 111–120, Red >120.
+ */
+export function classifyCapacityOverload(pct: number): RagStatus {
+  if (pct > 120) return 'Red';
+  if (pct > 110) return 'Yellow';
+  return 'Green';
+}
+
 const RAG_ORDER: Record<RagStatus, number> = { Green: 0, Yellow: 1, Red: 2 };
 
 /** The worst (most severe) status across a set of pillars; null when the set is empty. */

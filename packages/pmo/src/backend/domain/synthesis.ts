@@ -10,11 +10,19 @@ import { and, eq } from 'drizzle-orm';
 import { pmoDb } from '../db/client.ts';
 import * as t from '../db/schema.ts';
 import { assessBenchmark, type BenchmarkAssessment } from './benchmark.ts';
+import { type CapacityGapAssessment, computeRoleCapacityGap } from './capacity.ts';
 import { type ComplianceResult, scoreCompliance } from './compliance.ts';
 import { type DependencyResult, validateDependencies } from './dependencies.ts';
 import { assessBusyRate, assessThi, type BusyRateAssessment } from './feasibility.ts';
 import { computePlanVelocity } from './plan-metrics.ts';
-import type { RagStatus } from './rag.ts';
+import { classifyCapacityOverload, type RagStatus } from './rag.ts';
+import {
+  type BandMetric,
+  computeRiskScore,
+  type LatentRisk,
+  type RiskScore,
+  scanLatentRisks,
+} from './risk-signals.ts';
 
 export type FeasibilityStatus = 'Feasible (Green)' | 'Needs review (Yellow)' | 'Not feasible (Red)';
 
@@ -94,6 +102,10 @@ export interface ReviewReport {
   risk_warnings: RiskWarning[];
   benchmark: BenchmarkAssessment;
   recommended_adjustments: RecommendedAdjustment[];
+  // Weighted plan-riskiness score + advisory risks that fire even when pillars are Green.
+  risk_score: RiskScore;
+  latent_risks: LatentRisk[];
+  capacity: CapacityGapAssessment;
   audit: { tools_run: string[]; incomplete_steps: string[] };
 }
 
@@ -126,9 +138,64 @@ export async function buildReviewReport(input: {
     ? await validateDependencies({ tenantId, projectId })
     : ({ has_cycle: false, cycles: [], order_violations: [], dangling: [] } as DependencyResult);
 
-  const pillars = buildPillars({ compliance, busy, thi, benchmark, deps, summary });
+  const capacity = await computeRoleCapacityGap({ tenantId, planId });
+  const tasks = projectId
+    ? await pmoDb()
+        .select({ task_id: t.ds01Tasks.task_id, assignee_id: t.ds01Tasks.assignee_id })
+        .from(t.ds01Tasks)
+        .where(and(eq(t.ds01Tasks.tenant_id, tenantId), eq(t.ds01Tasks.project_id, projectId)))
+    : [];
+
+  const pillars = buildPillars({ compliance, busy, thi, benchmark, deps, summary, capacity });
   const conflict = detectCrossDimensionConflict(compliance.score_pct, pillars);
   const feasibility_status = rollupFeasibilityStatus(pillars, conflict.conflict);
+
+  // Latent risks fire even when every pillar is Green; the band metrics carry the raw
+  // values + Green ranges so detectFragileGreen can flag "Green but near the edge".
+  const band_metrics: BandMetric[] = [];
+  if (busy.peak_role_busy_rate_pct != null)
+    band_metrics.push({
+      dimension: 'Resource',
+      value: busy.peak_role_busy_rate_pct,
+      green_lo: 85,
+      green_hi: 110,
+      unit: '%',
+    });
+  if (thi.thi_pct != null)
+    band_metrics.push({
+      dimension: 'THI',
+      value: thi.thi_pct,
+      green_lo: 15,
+      green_hi: 25,
+      unit: '%',
+    });
+  if (benchmark.velocity.deviation_pct != null)
+    band_metrics.push({
+      dimension: 'Benchmark',
+      value: benchmark.velocity.deviation_pct,
+      green_lo: -15,
+      green_hi: 15,
+      unit: '%',
+    });
+  if (benchmark.on_time_history_pct != null)
+    band_metrics.push({
+      dimension: 'On-time',
+      value: benchmark.on_time_history_pct,
+      green_lo: 90,
+      green_hi: null,
+      unit: '%',
+    });
+
+  const latent_risks = scanLatentRisks({
+    band_metrics,
+    benchmark: {
+      insufficient_data: benchmark.insufficient_data,
+      cohort_project_type: benchmark.cohort_project_type,
+    },
+    capacity: { bottleneck: capacity.bottleneck },
+    tasks,
+  });
+  const risk_score = computeRiskScore({ pillars, latent_risks });
 
   const reasons = pillars
     .filter((p) => p.rag === 'Red')
@@ -161,9 +228,12 @@ export async function buildReviewReport(input: {
     cross_dimension_conflict: conflict.explanation,
     gap_report: compliance.gaps,
     custom_sections: compliance.custom_sections,
-    risk_warnings: buildRiskWarnings({ busy, thi, deps, compliance }),
+    risk_warnings: buildRiskWarnings({ busy, thi, deps, compliance, capacity }),
     benchmark,
     recommended_adjustments: buildRecommendations({ compliance, busy, thi, deps }),
+    risk_score,
+    latent_risks,
+    capacity,
     audit: {
       tools_run: [
         'scoreCompliance',
@@ -171,6 +241,8 @@ export async function buildReviewReport(input: {
         'assessThi',
         'assessBenchmark',
         'validateDependencies',
+        'computeRoleCapacityGap',
+        'scanLatentRisks',
       ],
       incomplete_steps: [],
     },
@@ -180,12 +252,13 @@ export async function buildReviewReport(input: {
 function buildPillars(args: {
   compliance: ComplianceResult;
   busy: BusyRateAssessment;
-  thi: { rag: RagStatus | null };
+  thi: { rag: RagStatus | null; thi_pct: number | null };
   benchmark: BenchmarkAssessment;
   deps: DependencyResult;
   summary?: { risk_count: number | null };
+  capacity: CapacityGapAssessment;
 }): Pillar[] {
-  const { compliance, busy, thi, benchmark, deps, summary } = args;
+  const { compliance, busy, thi, benchmark, deps, summary, capacity } = args;
   const pillars: Pillar[] = [];
 
   // Compliance: Red when below threshold, Yellow when there are gaps, else Green.
@@ -197,17 +270,27 @@ function buildPillars(args: {
     reason: `compliance ${Math.round(compliance.score_pct)}%`,
   });
 
-  // Resource: driven by the plan's role-level peak (DS07), not the org-wide per-member
-  // snapshot — DS03 busy_rate sums a member's load across all projects, so a member at
-  // 125% need not be over-allocated *to this plan*. Fall back to the member worst only
-  // when no role peak is available.
-  const resourceRag = busy.peak_rag ?? busy.max_member_rag;
-  if (resourceRag)
+  // Resource: driven by the RAW capacity-gap (DS01 effort × DS08 capacity), not the DS07
+  // header. The bottleneck role's projected peak (org current load + this plan's peak-month
+  // increment) is the real contention signal; classified one-sided (only over-allocation is
+  // a feasibility risk). Falls back to the DS03 member-level worst when no role mapped to
+  // capacity (data gap) — never to the DS07 header.
+  const bottleneck = capacity.bottleneck;
+  if (bottleneck && bottleneck.projected_busy_rate_pct != null) {
+    const pct = bottleneck.projected_busy_rate_pct;
+    const when = bottleneck.peak_month ? ` in ${bottleneck.peak_month}` : '';
     pillars.push({
       dimension: 'Resource',
-      rag: resourceRag,
-      reason: `capacity gap (peak busy ~${Math.round(busy.peak_role_busy_rate_pct ?? 0)}%)`,
+      rag: classifyCapacityOverload(pct),
+      reason: `${bottleneck.role} projected ~${Math.round(pct)}%${when} (computed from DS01×DS08)`,
     });
+  } else if (busy.max_member_rag) {
+    pillars.push({
+      dimension: 'Resource',
+      rag: busy.max_member_rag,
+      reason: 'resource pressure (member-level; no role capacity mapped)',
+    });
+  }
 
   // Timeline/Dependency: Red on a cycle, Yellow on an order violation.
   const depRag: RagStatus = deps.has_cycle
@@ -222,7 +305,14 @@ function buildPillars(args: {
   });
 
   // THI.
-  if (thi.rag) pillars.push({ dimension: 'THI', rag: thi.rag, reason: 'THI out of healthy band' });
+  if (thi.rag) {
+    const pct = thi.thi_pct;
+    const reason =
+      thi.rag === 'Green'
+        ? `THI ${pct ?? '?'}% within healthy 15–25% band`
+        : `THI ${pct ?? '?'}% outside healthy 15–25% band`;
+    pillars.push({ dimension: 'THI', rag: thi.rag, reason });
+  }
 
   // Benchmark/velocity.
   if (benchmark.velocity.rag)
@@ -234,10 +324,15 @@ function buildPillars(args: {
 
   // Risk: missing register defaults to Red (F-01); else Green when at least one risk is tracked.
   const riskRed = compliance.risk_register_missing || (summary?.risk_count ?? 0) === 0;
+  const riskReason = riskRed
+    ? compliance.risk_register_missing
+      ? 'missing Risk Register'
+      : 'no risks tracked'
+    : `${summary?.risk_count ?? 0} risk(s) tracked`;
   pillars.push({
     dimension: 'Risk',
     rag: riskRed ? 'Red' : 'Green',
-    reason: 'missing Risk Register',
+    reason: riskReason,
   });
 
   return pillars;
@@ -248,18 +343,33 @@ function buildRiskWarnings(args: {
   thi: { thi_pct: number | null; rag: RagStatus | null };
   deps: DependencyResult;
   compliance: ComplianceResult;
+  capacity: CapacityGapAssessment;
 }): RiskWarning[] {
-  const { busy, thi, deps, compliance } = args;
+  const { busy, thi, deps, compliance, capacity } = args;
   const warnings: RiskWarning[] = [];
 
-  if (busy.peak_rag && busy.peak_rag !== 'Green') {
+  const rawPeak = capacity.bottleneck?.projected_busy_rate_pct ?? null;
+  if (rawPeak != null && rawPeak > 110) {
     warnings.push({
       dimension: 'Resource',
-      rag: busy.peak_rag,
-      metric: 'Busy Rate (N01)',
-      value_pct: busy.peak_role_busy_rate_pct,
-      why: `Peak role demand ~${Math.round(busy.peak_role_busy_rate_pct ?? 0)}% exceeds capacity.`,
-      evidence: { source: 'DS03/DS08', row_id: busy.project_id ?? '' },
+      rag: classifyCapacityOverload(rawPeak),
+      metric: 'Capacity gap (DS01×DS08)',
+      value_pct: rawPeak,
+      why: `${capacity.bottleneck?.role} projected ~${Math.round(rawPeak)}% — peak demand exceeds capacity.`,
+      evidence: { source: 'DS01/DS08', row_id: capacity.bottleneck?.role ?? '' },
+    });
+  }
+
+  // Reconciliation flag: the DS07 header peak materially disagrees with the computed peak.
+  const ds07Peak = busy.peak_role_busy_rate_pct;
+  if (ds07Peak != null && rawPeak != null && Math.abs(ds07Peak - rawPeak) > 15) {
+    warnings.push({
+      dimension: 'Resource',
+      rag: 'Yellow',
+      metric: 'Capacity reconciliation',
+      value_pct: rawPeak,
+      why: `DS07 states peak busy ${Math.round(ds07Peak)}% but the computed (DS01×DS08) peak is ${Math.round(rawPeak)}% for ${capacity.bottleneck?.role} — reconcile the header.`,
+      evidence: { source: 'DS07 vs DS01/DS08', row_id: capacity.bottleneck?.role ?? '' },
     });
   }
   if (thi.rag && thi.rag !== 'Green') {

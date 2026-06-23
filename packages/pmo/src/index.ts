@@ -72,6 +72,18 @@ export {
   ragWorst,
 } from './backend/domain/rag.ts';
 export {
+  type BandMetric,
+  computeRiskScore,
+  detectBusFactor,
+  detectCapacityNearFull,
+  detectFragileGreen,
+  detectNoCohort,
+  type LatentRisk,
+  type RiskScore,
+  type RiskSeverity,
+  scanLatentRisks,
+} from './backend/domain/risk-signals.ts';
+export {
   getReviewReports,
   type SaveReviewReportResult,
   saveReviewReport,

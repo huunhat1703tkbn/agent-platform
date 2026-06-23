@@ -43,6 +43,15 @@ function fakeDraft(planId: string): ReviewReport {
       on_time_rag: 'Green',
     },
     recommended_adjustments: [],
+    risk_score: { score: 0, band: 'Green', drivers: [] },
+    latent_risks: [],
+    capacity: {
+      plan_id: 'PLAN-001',
+      project_id: null,
+      roles: [],
+      bottleneck: null,
+      unmapped_roles: [],
+    },
     audit: { tools_run: [], incomplete_steps: [] },
   };
 }

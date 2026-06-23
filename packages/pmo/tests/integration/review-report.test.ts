@@ -67,10 +67,13 @@ describe('buildReviewReport (DS07 synthesis vs ground truth)', () => {
       expect(r.gap_report).toHaveLength(0);
       const benchmark = r.pillars.find((p) => p.dimension === 'Benchmark');
       expect(benchmark?.rag).toBe('Yellow');
-      // Benchmark is the only non-green pillar.
-      expect(
-        r.pillars.filter((p) => p.dimension !== 'Benchmark').every((p) => p.rag === 'Green'),
-      ).toBe(true);
+      // Resource is also Yellow: the raw capacity gap (DS01×DS08) projects the Security
+      // Engineer role — already 95% busy org-wide (a known bottleneck) — over capacity once
+      // this plan's increment is added. DS07's 95% header hid that org-level contention.
+      const resource = r.pillars.find((p) => p.dimension === 'Resource');
+      expect(resource?.rag).toBe('Yellow');
+      // No pillar is Red → verdict stays "Needs review (Yellow)".
+      expect(r.pillars.some((p) => p.rag === 'Red')).toBe(false);
     });
   });
 });

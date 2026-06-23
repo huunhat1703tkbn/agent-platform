@@ -1,5 +1,24 @@
 import { describe, expect, it } from 'vitest';
-import { classifyBusyRate, classifyOnTime, classifyThi } from '../../src/backend/domain/rag.ts';
+import {
+  classifyBusyRate,
+  classifyCapacityOverload,
+  classifyOnTime,
+  classifyThi,
+} from '../../src/backend/domain/rag.ts';
+
+describe('classifyCapacityOverload (one-sided: only over-allocation is a feasibility risk)', () => {
+  it('rates a comfortably-loaded peak role as Green even when well under 75%', () => {
+    // A plan whose busiest role peaks at 65% is over-staffed, NOT infeasible.
+    expect(classifyCapacityOverload(65)).toBe('Green');
+    expect(classifyCapacityOverload(108)).toBe('Green');
+  });
+  it('flags 111–120% as Yellow', () => {
+    expect(classifyCapacityOverload(118)).toBe('Yellow');
+  });
+  it('flags >120% as Red', () => {
+    expect(classifyCapacityOverload(132)).toBe('Red');
+  });
+});
 
 // RAG bands are the contract in docs/projectplanguard/05-feasibility-rules-and-ds07.md §1.
 
