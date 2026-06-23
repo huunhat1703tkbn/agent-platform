@@ -100,9 +100,13 @@ export function Ds07Dashboard({ report, issued, onIssue, isIssuing }: Props) {
             )}
             <Button variant="secondary" onClick={downloadWorkbook}>
               <Download className="mr-1 size-4" />
-              Download Excel
+              {issued ? 'Download report (.xlsx)' : 'Download draft (.xlsx)'}
             </Button>
-            <span className="text-center text-xs text-ink-muted">PMO approval required</span>
+            <span className="max-w-[16rem] text-center text-xs text-ink-muted">
+              {issued
+                ? 'Official record issued — download a copy anytime.'
+                : 'Download = a copy to read · Issue = sign off the official record (saved + audited).'}
+            </span>
           </div>
         </CardContent>
       </Card>
