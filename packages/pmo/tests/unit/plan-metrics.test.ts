@@ -21,8 +21,8 @@ describe('sumEffortMd', () => {
 });
 
 describe('planVelocityMdMonth', () => {
-  it('is effort_md / planned duration_months (PLAN-002: 426 / 9 ≈ 47.3)', () => {
-    expect(planVelocityMdMonth(426, 9)).toBeCloseTo(47.33, 2);
+  it('is effort_md / planned duration_months, rounded to 1 dp (PLAN-002: 426 / 9 → 47.3)', () => {
+    expect(planVelocityMdMonth(426, 9)).toBe(47.3);
   });
 
   it('matches the DS07 baselines (PLAN-001 168/7=24, PLAN-104 140/5=28)', () => {

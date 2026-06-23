@@ -57,13 +57,15 @@ export function sumEffortMd(tasks: { effort_days: number | null }[]): number {
 /**
  * Velocity in man-days per month: computed effort ÷ the schedule-derived duration
  * (max(end) − min(start) ÷ 30). Null when the duration is missing or non-positive.
+ * Rounded to 1 decimal place — the canonical value surfaced everywhere (DS07 header,
+ * benchmark comparison, UI).
  */
 export function planVelocityMdMonth(
   effortMd: number,
   durationMonths: number | null,
 ): number | null {
   if (durationMonths == null || durationMonths <= 0) return null;
-  return effortMd / durationMonths;
+  return Math.round((effortMd / durationMonths) * 10) / 10;
 }
 
 /**
