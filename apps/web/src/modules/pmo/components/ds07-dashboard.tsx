@@ -80,7 +80,7 @@ export function Ds07Dashboard({ report, issued, onIssue, isIssuing }: Props) {
               </Badge>
             </div>
             <p className="max-w-2xl text-sm text-ink-muted">{r.feasibility_reason}</p>
-            {r.cross_dimension_conflict && (
+            {r.cross_dimension_conflict && r.cross_dimension_conflict !== r.feasibility_reason && (
               <div className="mt-1 flex items-start gap-2 rounded-md bg-semantic-warning-tint px-3 py-2 text-sm text-semantic-warning">
                 <AlertTriangle className="mt-0.5 size-4 shrink-0" />
                 <span>{r.cross_dimension_conflict}</span>
