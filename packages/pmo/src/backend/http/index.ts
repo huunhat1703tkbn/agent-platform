@@ -3,6 +3,7 @@ import type { Context, Hono } from 'hono';
 import { listPlans } from '../domain/plans.ts';
 import { reportToWorkbookBuffer } from '../domain/report-workbook.ts';
 import { getReviewReports, saveReviewReport } from '../domain/save-review-report.ts';
+import { findSimilarProjects } from '../domain/similarity.ts';
 import { buildReviewReport } from '../domain/synthesis.ts';
 
 /** 403 unless the caller holds the given pmo permission (org/tenant admin resolve to all). */
@@ -33,6 +34,15 @@ export function registerPmoRoutes(app: Hono<SessionEnv>): void {
       getReviewReports({ tenantId: scope.tenant_id, planId }),
     ]);
     return c.json({ report, issued: issued[0] ?? null });
+  });
+
+  // Historical projects most similar to the plan (deterministic feature similarity) + outcomes.
+  app.get('/api/agent/v1/pmo/plans/:planId/similar', async (c) => {
+    requirePmoPermission(c, 'pmo.plan.read');
+    const scope = c.get('user');
+    const planId = c.req.param('planId');
+    const result = await findSimilarProjects({ tenantId: scope.tenant_id, planId, k: 5 });
+    return c.json(result ?? { plan_id: planId, plan: null, similar: [] });
   });
 
   // Download the DS07 review as an .xlsx workbook (Summary + pillars + gaps + risks +

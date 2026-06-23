@@ -4,6 +4,7 @@ import { pmoApi } from '../api/client';
 export const pmoQueryKeys = {
   plans: () => ['pmo', 'plans'] as const,
   review: (planId: string) => ['pmo', 'review', planId] as const,
+  similar: (planId: string) => ['pmo', 'similar', planId] as const,
 };
 
 export function usePmoPlans() {
@@ -14,6 +15,14 @@ export function usePmoReview(planId: string | null) {
   return useQuery({
     queryKey: pmoQueryKeys.review(planId ?? ''),
     queryFn: () => pmoApi.getReview(planId as string),
+    enabled: planId != null,
+  });
+}
+
+export function usePmoSimilar(planId: string | null) {
+  return useQuery({
+    queryKey: pmoQueryKeys.similar(planId ?? ''),
+    queryFn: () => pmoApi.getSimilar(planId as string),
     enabled: planId != null,
   });
 }

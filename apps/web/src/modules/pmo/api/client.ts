@@ -118,6 +118,25 @@ export interface ReviewReport {
   capacity: CapacityGapAssessment;
 }
 
+export interface SimilarProject {
+  historical_project_id: string;
+  project_type: string | null;
+  similarity_pct: number;
+  outcome: string | null;
+  same_type: boolean;
+  deltas: {
+    effort_pct: number | null;
+    duration_pct: number | null;
+    team_pct: number | null;
+    velocity_pct: number | null;
+  };
+}
+
+export interface SimilarProjectsResult {
+  plan_id: string;
+  similar: SimilarProject[];
+}
+
 export interface PlanListItem {
   plan_id: string;
   project_id: string | null;
@@ -155,6 +174,14 @@ export const pmoApi = {
     });
     if (!res.ok) throw new Error(`get review failed: ${res.status}`);
     return res.json() as Promise<{ report: ReviewReport; issued: IssuedReport | null }>;
+  },
+
+  async getSimilar(planId: string): Promise<SimilarProjectsResult> {
+    const res = await fetch(`${BASE}/plans/${encodeURIComponent(planId)}/similar`, {
+      credentials: 'include',
+    });
+    if (!res.ok) throw new Error(`get similar failed: ${res.status}`);
+    return res.json() as Promise<SimilarProjectsResult>;
   },
 
   async issueReview(planId: string): Promise<IssueResult> {

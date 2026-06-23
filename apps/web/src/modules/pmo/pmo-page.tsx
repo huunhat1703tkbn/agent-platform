@@ -2,7 +2,7 @@ import { Button, EmptyState, PageChrome, Skeleton } from '@seta/shared-ui';
 import { ClipboardCheck, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
 import { Ds07Dashboard } from './components/ds07-dashboard';
-import { useIssuePmoReview, usePmoPlans, usePmoReview } from './hooks/use-pmo';
+import { useIssuePmoReview, usePmoPlans, usePmoReview, usePmoSimilar } from './hooks/use-pmo';
 
 export function PmoPage() {
   const { data: plans, isPending: plansPending } = usePmoPlans();
@@ -10,6 +10,7 @@ export function PmoPage() {
   const selected = planId ?? plans?.[0]?.plan_id ?? null;
 
   const { data: review, isPending: reviewPending } = usePmoReview(selected);
+  const { data: similar } = usePmoSimilar(selected);
   const issue = useIssuePmoReview();
 
   return (
@@ -54,6 +55,7 @@ export function PmoPage() {
             <Ds07Dashboard
               report={review.report}
               issued={review.issued}
+              similar={similar?.similar ?? []}
               onIssue={() => issue.mutate(selected)}
               isIssuing={issue.isPending}
             />

@@ -18,14 +18,21 @@ import {
   TabsTrigger,
 } from '@seta/shared-ui';
 import { AlertTriangle, CheckCircle2, Download, FlaskConical, Lightbulb } from 'lucide-react';
-import type { IssuedReport, ReviewReport } from '../api/client';
+import type { IssuedReport, ReviewReport, SimilarProject } from '../api/client';
 import { feasibilityKind, ragBadgeVariant, ragSurface, severityVariant } from './rag';
 
 interface Props {
   report: ReviewReport;
   issued: IssuedReport | null;
+  similar: SimilarProject[];
   onIssue: () => void;
   isIssuing: boolean;
+}
+
+function fmtDelta(n: number | null): string {
+  if (n == null) return '—';
+  const s = n > 0 ? '+' : '';
+  return `${s}${n}%`;
 }
 
 function fmtPct(n: number | null | undefined): string {
@@ -49,7 +56,7 @@ function Metric({
   );
 }
 
-export function Ds07Dashboard({ report, issued, onIssue, isIssuing }: Props) {
+export function Ds07Dashboard({ report, issued, similar, onIssue, isIssuing }: Props) {
   const r = report;
   const compliancePillar = r.pillars.find((p) => p.dimension === 'Compliance');
   const resourcePillar = r.pillars.find((p) => p.dimension === 'Resource');
@@ -168,6 +175,7 @@ export function Ds07Dashboard({ report, issued, onIssue, isIssuing }: Props) {
             Recommendations ({r.recommended_adjustments.length})
           </TabsTrigger>
           <TabsTrigger value="benchmark">Benchmark</TabsTrigger>
+          <TabsTrigger value="similar">Similar ({similar.length})</TabsTrigger>
         </TabsList>
 
         <TabsContent value="gaps">
@@ -388,6 +396,51 @@ export function Ds07Dashboard({ report, issued, onIssue, isIssuing }: Props) {
                 <div className="text-semantic-warning">
                   Insufficient benchmark data — confidence lowered.
                 </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+        <TabsContent value="similar">
+          <Card>
+            <CardContent className="p-0">
+              <p className="border-b border-border-subtle p-4 text-sm text-ink-muted">
+                Closest past projects by effort, duration, team size and velocity — with how they
+                turned out. Grounds the velocity/feasibility judgement in real history.
+              </p>
+              {similar.length === 0 ? (
+                <p className="p-6 text-sm text-ink-muted">No comparable historical projects.</p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Project</TableHead>
+                      <TableHead>Similarity</TableHead>
+                      <TableHead>Outcome</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Duration Δ</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {similar.map((s) => (
+                      <TableRow key={s.historical_project_id}>
+                        <TableCell className="font-medium">{s.historical_project_id}</TableCell>
+                        <TableCell className="tabular-nums">{s.similarity_pct}%</TableCell>
+                        <TableCell>{s.outcome ?? '—'}</TableCell>
+                        <TableCell>
+                          {s.project_type ?? '—'}
+                          {s.same_type && (
+                            <Badge className="ml-1" variant="secondary">
+                              same
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="tabular-nums">
+                          {fmtDelta(s.deltas.duration_pct)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               )}
             </CardContent>
           </Card>
