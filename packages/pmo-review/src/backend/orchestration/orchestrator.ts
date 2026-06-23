@@ -137,6 +137,12 @@ function instructionsText(): string {
     'plus whether hiring alone resolves the verdict and which pillars still block it. These are',
     'read-only — they NEVER issue. If the role is unknown, offer the available roles it returns.',
     '',
+    'SIMILAR PROJECTS — when the user asks whether anything like this has been done, for comparable',
+    'past projects, or how similar plans turned out ("what projects look like PLAN-002", "any',
+    'precedent for this"): call pmo_findSimilarProjects(planId) and report the closest matches with',
+    'their similarity % and OUTCOME (e.g. "resembles PRJ-H-101 at 87%, which delivered on time").',
+    'Use it to ground velocity/feasibility judgements in real history. Read-only.',
+    '',
     'AMBIGUOUS / NO PLAN NAMED — if the user has not named a plan ("review my plan", "is it',
     'feasible?"), call pmo_listPlans and ask them to pick one; do NOT guess a plan id. If a review',
     'tool reports a plan is unknown / not found, do NOT present its output as a verdict — relay that',
@@ -409,6 +415,7 @@ function assemble(res: MastraToolSignals): OrchestratorResult {
       'pmo_benchmarkVelocity',
       'pmo_simulateHeadcount',
       'pmo_recommendHiring',
+      'pmo_findSimilarProjects',
       'pmo_reviewPlan',
     ])
   ) {

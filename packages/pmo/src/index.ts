@@ -96,6 +96,14 @@ export {
   seedPmoDataset,
 } from './backend/domain/seed-dataset.ts';
 export {
+  findSimilarProjects,
+  type HistoryFeatures,
+  type PlanFeatures,
+  rankSimilar,
+  type SimilarProject,
+  type SimilarProjectsResult,
+} from './backend/domain/similarity.ts';
+export {
   buildReviewReport,
   detectCrossDimensionConflict,
   type FeasibilityStatus,

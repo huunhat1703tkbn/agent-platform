@@ -306,6 +306,45 @@ export function makeOrchestratorTools(deps: OrchestratorToolDeps) {
     },
   });
 
+  const pmo_findSimilarProjects = defineAgentTool({
+    id: 'pmo_findSimilarProjects',
+    name: 'Find Similar Projects',
+    description:
+      'Find the historical projects most similar to a plan (by effort, duration, team size and ' +
+      'velocity) and report how each one turned out, e.g. "what past projects look like PLAN-002" ' +
+      'or "has anything like this been done before". Use it to ground a velocity/feasibility ' +
+      'judgement in real outcomes ("resembles PRJ-H-101, which delivered late"). Read-only.',
+    input: PlanArg,
+    output: z.object({
+      planId: z.string(),
+      similar: z.array(
+        z.object({
+          historicalProjectId: z.string(),
+          projectType: z.string().nullable(),
+          similarityPct: z.number(),
+          outcome: z.string().nullable(),
+          sameType: z.boolean(),
+        }),
+      ),
+    }),
+    execute: async ({ planId }) => {
+      assertPermission(ctx, 'pmo.plan.read');
+      await assertKnownPlan(port, ctx.tenantId, planId);
+      const res = await port.findSimilarProjects({ tenantId: ctx.tenantId, planId });
+      if (!res) throw new Error(`Plan "${planId}" not found.`);
+      return {
+        planId: res.plan_id,
+        similar: res.similar.map((s) => ({
+          historicalProjectId: s.historical_project_id,
+          projectType: s.project_type,
+          similarityPct: s.similarity_pct,
+          outcome: s.outcome,
+          sameType: s.same_type,
+        })),
+      };
+    },
+  });
+
   const pmo_reviewPlan = makeReviewPlanTool({ port, ctx });
 
   return {
@@ -316,6 +355,7 @@ export function makeOrchestratorTools(deps: OrchestratorToolDeps) {
     pmo_benchmarkVelocity,
     pmo_simulateHeadcount,
     pmo_recommendHiring,
+    pmo_findSimilarProjects,
     pmo_synthesizeReview,
     pmo_reviewPlan,
   };

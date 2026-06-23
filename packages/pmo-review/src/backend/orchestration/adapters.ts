@@ -11,6 +11,7 @@ import {
   assessThi,
   buildReviewReport,
   type DependencyResult,
+  findSimilarProjects,
   getPlanOverview,
   listPlans,
   recommendHiring,
@@ -60,6 +61,8 @@ export function makePmoReviewPort(): PmoReviewPort {
       simulateHeadcount({ tenantId, planId, role, delta }),
 
     recommendHiring: ({ tenantId, planId }) => recommendHiring({ tenantId, planId }),
+
+    findSimilarProjects: ({ tenantId, planId, k }) => findSimilarProjects({ tenantId, planId, k }),
 
     issueReport: ({ tenantId, actorUserId, planId }) =>
       saveReviewReport({ session: { tenant_id: tenantId, user_id: actorUserId }, planId }),

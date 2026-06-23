@@ -13,6 +13,7 @@ import type {
   PlanOverview,
   ReviewReport,
   SaveReviewReportResult,
+  SimilarProjectsResult,
 } from '@seta/pmo';
 import type { FeasibilityFindings } from './schemas.ts';
 
@@ -53,6 +54,13 @@ export interface PmoReviewPort {
     tenantId: string;
     planId: string;
   }): Promise<HiringRecommendation | null>;
+  /** Top-k historical projects most similar to the plan (deterministic feature
+   *  similarity over DS05) with their outcomes. Null for an unknown plan. */
+  findSimilarProjects(input: {
+    tenantId: string;
+    planId: string;
+    k?: number;
+  }): Promise<SimilarProjectsResult | null>;
   /** Persist the issued DS07 report + emit pmo.report.issued. The ONLY write,
    *  guarded by the orchestrator behind a HITL approval gate. */
   issueReport(input: {
