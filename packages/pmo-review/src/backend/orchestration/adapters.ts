@@ -10,6 +10,7 @@ import {
   assessBusyRate,
   assessThi,
   buildReviewReport,
+  computeRoleCapacityGap,
   type DependencyResult,
   findSimilarProjects,
   getPlanOverview,
@@ -63,6 +64,8 @@ export function makePmoReviewPort(): PmoReviewPort {
     recommendHiring: ({ tenantId, planId }) => recommendHiring({ tenantId, planId }),
 
     findSimilarProjects: ({ tenantId, planId, k }) => findSimilarProjects({ tenantId, planId, k }),
+
+    capacityGap: ({ tenantId, planId }) => computeRoleCapacityGap({ tenantId, planId }),
 
     issueReport: ({ tenantId, actorUserId, planId }) =>
       saveReviewReport({ session: { tenant_id: tenantId, user_id: actorUserId }, planId }),

@@ -345,6 +345,60 @@ export function makeOrchestratorTools(deps: OrchestratorToolDeps) {
     },
   });
 
+  const pmo_capacityGap = defineAgentTool({
+    id: 'pmo_capacityGap',
+    name: 'Capacity Gap',
+    description:
+      'Show the per-role capacity picture for a plan (computed from DS01 demand × DS08 capacity): ' +
+      'WHICH role is the bottleneck, each role’s projected peak busy %, its peak month, and which ' +
+      'roles go over capacity. Use this for "which role is at peak / over-allocated", "where is the ' +
+      'resource crunch", "show capacity by role". Read-only.',
+    input: PlanArg,
+    output: z.object({
+      planId: z.string(),
+      bottleneck: z
+        .object({
+          role: z.string(),
+          projected_busy_rate_pct: z.number().nullable(),
+          peak_month: z.string().nullable(),
+        })
+        .nullable(),
+      roles: z.array(
+        z.object({
+          role: z.string(),
+          projected_busy_rate_pct: z.number().nullable(),
+          peak_month: z.string().nullable(),
+          rag: z.string().nullable(),
+          exceeds_spare: z.boolean(),
+        }),
+      ),
+      unmapped_roles: z.array(z.string()),
+    }),
+    execute: async ({ planId }) => {
+      assertPermission(ctx, 'pmo.plan.read');
+      await assertKnownPlan(port, ctx.tenantId, planId);
+      const cap = await port.capacityGap({ tenantId: ctx.tenantId, planId });
+      return {
+        planId,
+        bottleneck: cap.bottleneck
+          ? {
+              role: cap.bottleneck.role,
+              projected_busy_rate_pct: cap.bottleneck.projected_busy_rate_pct,
+              peak_month: cap.bottleneck.peak_month,
+            }
+          : null,
+        roles: cap.roles.map((r) => ({
+          role: r.role,
+          projected_busy_rate_pct: r.projected_busy_rate_pct,
+          peak_month: r.peak_month,
+          rag: r.rag,
+          exceeds_spare: r.exceeds_spare,
+        })),
+        unmapped_roles: cap.unmapped_roles,
+      };
+    },
+  });
+
   const pmo_reviewPlan = makeReviewPlanTool({ port, ctx });
 
   return {
@@ -353,6 +407,7 @@ export function makeOrchestratorTools(deps: OrchestratorToolDeps) {
     pmo_checkCompliance,
     pmo_assessFeasibility,
     pmo_benchmarkVelocity,
+    pmo_capacityGap,
     pmo_simulateHeadcount,
     pmo_recommendHiring,
     pmo_findSimilarProjects,

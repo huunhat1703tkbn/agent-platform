@@ -7,6 +7,7 @@
  */
 import type {
   BenchmarkAssessment,
+  CapacityGapAssessment,
   ComplianceResult,
   HeadcountSimulation,
   HiringRecommendation,
@@ -61,6 +62,9 @@ export interface PmoReviewPort {
     planId: string;
     k?: number;
   }): Promise<SimilarProjectsResult | null>;
+  /** Raw per-role capacity gap (DS01 demand × DS08 capacity): which role is the
+   *  bottleneck, each role's projected peak busy, and roles over capacity. */
+  capacityGap(input: { tenantId: string; planId: string }): Promise<CapacityGapAssessment>;
   /** Persist the issued DS07 report + emit pmo.report.issued. The ONLY write,
    *  guarded by the orchestrator behind a HITL approval gate. */
   issueReport(input: {

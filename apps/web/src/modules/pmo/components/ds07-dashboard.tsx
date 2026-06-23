@@ -20,7 +20,6 @@ import {
 import { AlertTriangle, CheckCircle2, Download, FlaskConical, Lightbulb } from 'lucide-react';
 import type { IssuedReport, ReviewReport, SimilarProject } from '../api/client';
 import { feasibilityKind, ragBadgeVariant, ragSurface, severityVariant } from './rag';
-import { WhatIfPanel } from './whatif-panel';
 
 interface Props {
   report: ReviewReport;
@@ -177,7 +176,6 @@ export function Ds07Dashboard({ report, issued, similar, onIssue, isIssuing }: P
           </TabsTrigger>
           <TabsTrigger value="benchmark">Benchmark</TabsTrigger>
           <TabsTrigger value="similar">Similar ({similar.length})</TabsTrigger>
-          <TabsTrigger value="whatif">What-if</TabsTrigger>
         </TabsList>
 
         <TabsContent value="gaps">
@@ -446,13 +444,6 @@ export function Ds07Dashboard({ report, issued, similar, onIssue, isIssuing }: P
               )}
             </CardContent>
           </Card>
-        </TabsContent>
-        <TabsContent value="whatif">
-          <WhatIfPanel
-            planId={r.plan_id}
-            roles={r.capacity.roles.map((role) => role.role)}
-            defaultRole={r.capacity.bottleneck?.role ?? null}
-          />
         </TabsContent>
       </Tabs>
     </div>
