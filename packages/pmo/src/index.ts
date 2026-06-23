@@ -71,6 +71,7 @@ export {
   type RagStatus,
   ragWorst,
 } from './backend/domain/rag.ts';
+export { reportToWorkbookBuffer } from './backend/domain/report-workbook.ts';
 export {
   type BandMetric,
   computeRiskScore,

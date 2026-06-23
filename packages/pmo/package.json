@@ -37,6 +37,7 @@
     "@seta/shared-storage": "workspace:^",
     "@seta/shared-types": "workspace:^",
     "drizzle-orm": "^0.45.2",
+    "exceljs": "^4.4.0",
     "hono": "^4.12.25",
     "pg": "^8.21.0",
     "pino": "^10.3.1",

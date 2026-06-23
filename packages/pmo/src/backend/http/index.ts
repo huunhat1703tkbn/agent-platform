@@ -1,6 +1,7 @@
 import type { SessionEnv } from '@seta/core';
 import type { Context, Hono } from 'hono';
 import { listPlans } from '../domain/plans.ts';
+import { reportToWorkbookBuffer } from '../domain/report-workbook.ts';
 import { getReviewReports, saveReviewReport } from '../domain/save-review-report.ts';
 import { buildReviewReport } from '../domain/synthesis.ts';
 
@@ -32,6 +33,19 @@ export function registerPmoRoutes(app: Hono<SessionEnv>): void {
       getReviewReports({ tenantId: scope.tenant_id, planId }),
     ]);
     return c.json({ report, issued: issued[0] ?? null });
+  });
+
+  // Download the DS07 review as an .xlsx workbook (Summary + pillars + gaps + risks +
+  // latent risks + recommendations + capacity). Read-only; computed fresh.
+  app.get('/api/agent/v1/pmo/plans/:planId/review/download', async (c) => {
+    requirePmoPermission(c, 'pmo.plan.read');
+    const scope = c.get('user');
+    const planId = c.req.param('planId');
+    const report = await buildReviewReport({ tenantId: scope.tenant_id, planId });
+    const buf = await reportToWorkbookBuffer(report);
+    c.header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    c.header('Content-Disposition', `attachment; filename="DS07_Review_${planId}.xlsx"`);
+    return c.body(buf as unknown as ArrayBuffer);
   });
 
   // Issue (persist) the DS07 report — the PMO approval action. Emits pmo.report.issued.
