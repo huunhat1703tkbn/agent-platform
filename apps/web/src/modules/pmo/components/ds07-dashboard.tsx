@@ -17,7 +17,7 @@ import {
   TabsList,
   TabsTrigger,
 } from '@seta/shared-ui';
-import { AlertTriangle, CheckCircle2, FlaskConical, Lightbulb } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Download, FlaskConical, Lightbulb } from 'lucide-react';
 import type { IssuedReport, ReviewReport } from '../api/client';
 import { feasibilityKind, ragBadgeVariant, ragSurface, severityVariant } from './rag';
 
@@ -55,6 +55,17 @@ export function Ds07Dashboard({ report, issued, onIssue, isIssuing }: Props) {
   const resourcePillar = r.pillars.find((p) => p.dimension === 'Resource');
   const thiPillar = r.pillars.find((p) => p.dimension === 'THI');
 
+  function downloadWorkbook() {
+    // Same-origin GET → the session cookie rides along; Content-Disposition: attachment
+    // makes the browser download the .xlsx without navigating away from the SPA.
+    const a = document.createElement('a');
+    a.href = `/api/agent/v1/pmo/plans/${encodeURIComponent(r.plan_id)}/review/download`;
+    a.download = `DS07_Review_${r.plan_id}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
   return (
     <div className="flex flex-col gap-6">
       {/* Verdict banner */}
@@ -87,6 +98,10 @@ export function Ds07Dashboard({ report, issued, onIssue, isIssuing }: Props) {
                 {isIssuing ? 'Issuing…' : 'Issue DS07 Report'}
               </Button>
             )}
+            <Button variant="secondary" onClick={downloadWorkbook}>
+              <Download className="mr-1 size-4" />
+              Download Excel
+            </Button>
             <span className="text-center text-xs text-ink-muted">PMO approval required</span>
           </div>
         </CardContent>
