@@ -43,6 +43,37 @@ export interface Recommendation {
   addresses: string[];
 }
 
+export interface RiskScore {
+  score: number;
+  band: Rag;
+  drivers: string[];
+}
+
+export interface LatentRisk {
+  code: string;
+  severity: 'low' | 'medium' | 'high';
+  dimension?: string;
+  title: string;
+  detail: string;
+}
+
+export interface RoleCapacityGap {
+  role: string;
+  peak_month: string | null;
+  peak_demand_md: number;
+  capacity_md_month: number | null;
+  current_busy_rate_pct: number | null;
+  projected_busy_rate_pct: number | null;
+  rag: Rag | null;
+  exceeds_spare: boolean;
+}
+
+export interface CapacityGapAssessment {
+  roles: RoleCapacityGap[];
+  bottleneck: RoleCapacityGap | null;
+  unmapped_roles: string[];
+}
+
 export interface Benchmark {
   cohort_project_type: string;
   similar_projects: string[];
@@ -82,6 +113,9 @@ export interface ReviewReport {
   risk_warnings: RiskWarning[];
   benchmark: Benchmark;
   recommended_adjustments: Recommendation[];
+  risk_score: RiskScore;
+  latent_risks: LatentRisk[];
+  capacity: CapacityGapAssessment;
 }
 
 export interface PlanListItem {

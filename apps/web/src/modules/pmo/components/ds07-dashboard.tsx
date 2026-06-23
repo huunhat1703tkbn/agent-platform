@@ -75,11 +75,19 @@ export function Ds07Dashboard({ report, issued, onIssue, isIssuing }: Props) {
             <div className="flex items-center gap-3">
               <StatusPill kind={feasibilityKind(r.feasibility_status)} />
               <h2 className="text-xl font-semibold text-ink">{r.feasibility_status}</h2>
+              <Badge variant={ragBadgeVariant(r.risk_score.band)}>
+                Risk {r.risk_score.score}/100
+              </Badge>
               <Badge variant={r.confidence === 'high' ? 'secondary' : 'warning'}>
                 {r.confidence} confidence
               </Badge>
             </div>
             <p className="max-w-2xl text-sm text-ink-muted">{r.feasibility_reason}</p>
+            {r.risk_score.drivers.length > 0 && (
+              <p className="max-w-2xl text-xs text-ink-muted">
+                Risk drivers: {r.risk_score.drivers.join(' · ')}
+              </p>
+            )}
             {r.cross_dimension_conflict && r.cross_dimension_conflict !== r.feasibility_reason && (
               <div className="mt-1 flex items-start gap-2 rounded-md bg-semantic-warning-tint px-3 py-2 text-sm text-semantic-warning">
                 <AlertTriangle className="mt-0.5 size-4 shrink-0" />
@@ -154,6 +162,8 @@ export function Ds07Dashboard({ report, issued, onIssue, isIssuing }: Props) {
         <TabsList>
           <TabsTrigger value="gaps">Gaps ({r.gap_report.length})</TabsTrigger>
           <TabsTrigger value="risks">Risks ({r.risk_warnings.length})</TabsTrigger>
+          <TabsTrigger value="advisory">Advisory ({r.latent_risks.length})</TabsTrigger>
+          <TabsTrigger value="capacity">Capacity ({r.capacity.roles.length})</TabsTrigger>
           <TabsTrigger value="recs">
             Recommendations ({r.recommended_adjustments.length})
           </TabsTrigger>
@@ -230,6 +240,90 @@ export function Ds07Dashboard({ report, issued, onIssue, isIssuing }: Props) {
               ))
             )}
           </div>
+        </TabsContent>
+
+        <TabsContent value="advisory">
+          <div className="flex flex-col gap-3">
+            <p className="text-sm text-ink-muted">
+              Advisory risks fire even when every pillar is Green — things a RAG verdict misses.
+            </p>
+            {r.latent_risks.length === 0 ? (
+              <p className="text-sm text-ink-muted">No latent risks detected.</p>
+            ) : (
+              r.latent_risks.map((l) => (
+                <Card key={`${l.code}-${l.title}`}>
+                  <CardContent className="flex items-start gap-3 p-4">
+                    <AlertTriangle className="mt-0.5 size-5 shrink-0 text-semantic-warning" />
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-ink">{l.title}</span>
+                        <Badge
+                          variant={
+                            l.severity === 'high'
+                              ? 'destructive'
+                              : l.severity === 'medium'
+                                ? 'warning'
+                                : 'secondary'
+                          }
+                        >
+                          {l.severity}
+                        </Badge>
+                      </div>
+                      <p className="mt-1 text-sm text-ink-muted">{l.detail}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
+            )}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="capacity">
+          <Card>
+            <CardContent className="p-0">
+              {r.capacity.bottleneck && (
+                <div className="border-b border-border-subtle p-4 text-sm">
+                  <span className="font-medium text-ink">Bottleneck:</span>{' '}
+                  <span className="text-ink">{r.capacity.bottleneck.role}</span> — projected{' '}
+                  <span className="font-semibold tabular-nums">
+                    {fmtPct(r.capacity.bottleneck.projected_busy_rate_pct)}
+                  </span>
+                  {r.capacity.bottleneck.peak_month
+                    ? ` in ${r.capacity.bottleneck.peak_month}`
+                    : ''}{' '}
+                  (computed from DS01 × DS08)
+                </div>
+              )}
+              {r.capacity.roles.length === 0 ? (
+                <p className="p-6 text-sm text-ink-muted">No role capacity mapped for this plan.</p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Role</TableHead>
+                      <TableHead>Projected busy</TableHead>
+                      <TableHead>Peak month</TableHead>
+                      <TableHead>Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {r.capacity.roles.map((role) => (
+                      <TableRow key={role.role}>
+                        <TableCell className="font-medium">{role.role}</TableCell>
+                        <TableCell className="tabular-nums">
+                          {fmtPct(role.projected_busy_rate_pct)}
+                        </TableCell>
+                        <TableCell>{role.peak_month ?? '—'}</TableCell>
+                        <TableCell>
+                          <Badge variant={ragBadgeVariant(role.rag)}>{role.rag ?? '—'}</Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="recs">
