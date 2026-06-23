@@ -5,6 +5,7 @@ import { reportToWorkbookBuffer } from '../domain/report-workbook.ts';
 import { getReviewReports, saveReviewReport } from '../domain/save-review-report.ts';
 import { findSimilarProjects } from '../domain/similarity.ts';
 import { buildReviewReport } from '../domain/synthesis.ts';
+import { recommendHiring, simulateHeadcount } from '../domain/whatif.ts';
 
 /** 403 unless the caller holds the given pmo permission (org/tenant admin resolve to all). */
 function requirePmoPermission(c: Context<SessionEnv>, permission: string): void {
@@ -43,6 +44,28 @@ export function registerPmoRoutes(app: Hono<SessionEnv>): void {
     const planId = c.req.param('planId');
     const result = await findSimilarProjects({ tenantId: scope.tenant_id, planId, k: 5 });
     return c.json(result ?? { plan_id: planId, plan: null, similar: [] });
+  });
+
+  // What-if: recompute Resource + verdict under a headcount change (read-only).
+  app.get('/api/agent/v1/pmo/plans/:planId/whatif', async (c) => {
+    requirePmoPermission(c, 'pmo.plan.read');
+    const scope = c.get('user');
+    const planId = c.req.param('planId');
+    const role = c.req.query('role') ?? '';
+    const delta = Number.parseInt(c.req.query('delta') ?? '0', 10) || 0;
+    const result = await simulateHeadcount({ tenantId: scope.tenant_id, planId, role, delta });
+    if (!result) return c.json({ error: 'plan not found' }, 404);
+    return c.json(result);
+  });
+
+  // Inverse what-if: hires for the bottleneck role to hit target + honesty about blockers.
+  app.get('/api/agent/v1/pmo/plans/:planId/hiring', async (c) => {
+    requirePmoPermission(c, 'pmo.plan.read');
+    const scope = c.get('user');
+    const planId = c.req.param('planId');
+    const result = await recommendHiring({ tenantId: scope.tenant_id, planId });
+    if (!result) return c.json({ error: 'plan not found' }, 404);
+    return c.json(result);
   });
 
   // Download the DS07 review as an .xlsx workbook (Summary + pillars + gaps + risks +

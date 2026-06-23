@@ -137,6 +137,34 @@ export interface SimilarProjectsResult {
   similar: SimilarProject[];
 }
 
+export interface HeadcountSimulation {
+  plan_id: string;
+  role: string;
+  delta: number;
+  role_found: boolean;
+  available_roles: string[];
+  resource_rag_before: Rag | null;
+  resource_rag_after: Rag | null;
+  feasibility_before: FeasibilityStatus;
+  feasibility_after: FeasibilityStatus;
+  changed: boolean;
+  bottleneck_after: { role: string; projected_busy_rate_pct: number } | null;
+  note: string;
+}
+
+export interface HiringRecommendation {
+  plan_id: string;
+  bottleneck: { role: string; projected_busy_rate_pct: number } | null;
+  headcount: number | null;
+  hires_to_target: number;
+  target_pct: number;
+  feasibility_before: FeasibilityStatus;
+  feasibility_after_hiring: FeasibilityStatus;
+  resolves_feasibility: boolean;
+  remaining_blockers: string[];
+  note: string;
+}
+
 export interface PlanListItem {
   plan_id: string;
   project_id: string | null;
@@ -182,6 +210,23 @@ export const pmoApi = {
     });
     if (!res.ok) throw new Error(`get similar failed: ${res.status}`);
     return res.json() as Promise<SimilarProjectsResult>;
+  },
+
+  async getHiring(planId: string): Promise<HiringRecommendation> {
+    const res = await fetch(`${BASE}/plans/${encodeURIComponent(planId)}/hiring`, {
+      credentials: 'include',
+    });
+    if (!res.ok) throw new Error(`get hiring failed: ${res.status}`);
+    return res.json() as Promise<HiringRecommendation>;
+  },
+
+  async getWhatIf(planId: string, role: string, delta: number): Promise<HeadcountSimulation> {
+    const q = new URLSearchParams({ role, delta: String(delta) });
+    const res = await fetch(`${BASE}/plans/${encodeURIComponent(planId)}/whatif?${q}`, {
+      credentials: 'include',
+    });
+    if (!res.ok) throw new Error(`what-if failed: ${res.status}`);
+    return res.json() as Promise<HeadcountSimulation>;
   },
 
   async issueReview(planId: string): Promise<IssueResult> {
