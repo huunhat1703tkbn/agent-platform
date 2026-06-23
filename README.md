@@ -1,192 +1,88 @@
-# Seta Agentic Platform
+# ProjectPlanGuard — PMO-01 Project Plan Review & Feasibility Validation Agent
 
-> **Architecture Reference:** For the complete implementation details and design principles, see [`docs/architecture.md`](docs/architecture.md). This is the single source of truth for the platform's implementation shape.
+> **Team TESA** — Transforming Enterprise Systems with Agents
+> Trương Hữu Nhật · Dương Quang Thanh · Bùi Ánh Dương
+> SETA International Agentic AI Hackathon 2026 · Track: Project Management Office (PMO)
 
-## 1. System Overview & Repo Structure
-
-### What is Seta Agentic Platform?
-
-Seta Agentic Platform is an open-source, AI-first, multi-tenant enterprise platform foundation. It's conceptually similar to next-gen ERP or SAP architectures, but built specifically for the agentic era.
-
-The defining characteristic is simple. Every business module in the Seta Agentic Platform embeds an Agentic Agent directly within its operational boundaries. Rather than acting as a simple QA chatbot, the agent reads current system state, reasons across domains, and proposes concrete transactional actions. Upon explicit human authorization, it executes those mutations directly.
-
-### Layered Architecture
-
-The platform architecture is organized into four decoupled tiers. This design ensures horizontal scalability and clear separation of concerns:
-
-```mermaid
-graph TD
-    subgraph Presentation["1. Presentation Tier (apps/web)"]
-        SPA["React 19 SPA"]
-    end
-
-    subgraph Application["2. Application & API Tier (apps/server)"]
-        Hono["Hono HTTP Server"]
-        Mastra["Mastra Agent Core"]
-    end
-
-    subgraph Background["3. Async Worker Tier (apps/worker)"]
-        Worker["Embeddings"]
-        Agent["Agent Steps"]
-        Jobs["Sync Jobs"]
-    end
-
-    subgraph Storage["4. Database & Storage Tier"]
-        DB["Relational Database"]
-        Vector["pgvector"]
-    end
-
-    Presentation -->|HTTP / WebSocket APIs| Application
-    Application -->|Enqueue Long Jobs| Background
-    Application -->|Read / Write| Storage
-    Background -->|Read / Write| Storage
-```
-
-- **SPA** (`apps/web/`): Built on React 19, Vite, and TanStack Router. It manages the core UI layout shell, handles dynamic injection of custom module components, and registers client-side navigation.
-- **Server** (`apps/server/`): A high-performance Hono HTTP server acting as the gateway. It handles request authentication, enforces RBAC middleware checks, orchestrates REST APIs, and runs the Mastra agent core.
-- **Worker** (`apps/worker/`): A resource-isolated process powered by graphile-worker. It processes async database tasks, generates text vector embeddings, handles calendar sync, and runs asynchronous workflow steps.
-- **Database** (Postgres 17): Stores standard relational application data with schemas for Core, Identity, Planner, and your custom modules. It also includes a dedicated pgvector HNSW index for fast semantic similarity search.
-
-### Core Agent Engine (Mastra Integration)
-
-The platform backend wraps and configures key modules from the Mastra runtime:
-
-- Specialist Agent and Tool declarations via `@mastra/core`
-- Deterministic multi-step process orchestration via `@mastra/core/workflows`
-- Short-term memory and long-term context indexing via `@mastra/memory` and `@mastra/pg`
-- System response auditing and testing via `@mastra/evals`
-
-The platform architecture remains flexible. While Mastra is configured by default, you can implement or plug in alternative agent frameworks if your use case requires it.
-
-### Folder Directory Layout
-
-```
-├── apps/
-│   ├── web/          React 19 SPA — module views, app shell, navigation
-│   ├── server/       Hono API + Mastra agent host
-│   ├── worker/       graphile-worker async jobs
-│   └── cli/          scaffolding & infra tooling
-│
-├── packages/
-│   ├── core/         event bus + RBAC foundation (everything depends on it)
-│   ├── identity/     auth, multi-tenancy, user profiles
-│   ├── planner/      REFERENCE MODULE — canonical business module
-│   ├── agent/        the assembled Mastra agent (supervisor + specialists)
-│   ├── knowledge/    knowledge base & document management
-│   ├── staffing/     resource allocation & team management
-│   ├── notifications/ multi-channel notifications
-│   ├── integrations/ external systems (M365, etc.)
-│   ├── shared-*/     shared infra (db, rbac, ui, crypto, storage, …)
-│   └── your-module/  BUILD YOUR CUSTOM MODULE HERE
-│
-├── sdks/
-│   ├── agent/        SDK for authoring agent tools (HITL support)
-│   └── module/       SDK for plugging module UI into the app shell
-│
-└── docs/             guides indexed below
-```
-
-**Documentation:**
-- **[`docs/architecture.md`](docs/architecture.md)** — system architecture & design principles (single source of truth)
-- **[`docs/agent-architecture.md`](docs/agent-architecture.md)** — three-tier supervisor agent system
-- **[`docs/dev-quickstart.md`](docs/dev-quickstart.md)** — local setup & first run
-- **[`docs/creating-modules.md`](docs/creating-modules.md)** — building a module with `pnpm gen module`
-- **[`docs/hosting/`](docs/hosting/)** — self-hosting (Docker Compose, AWS, scaling, upgrades)
-- **[`AGENTS.md`](AGENTS.md)** — contract for AI coding agents working in this repo
+This folder is the **single source of context** for building ProjectPlanGuard on the
+Seta agent platform. Every doc here is written to be re-fed into a coding session as
+grounding context — read this index first, then open the doc for the decision you're making.
 
 ---
 
-## 2. Getting Started
+## What we are building (one line)
 
-**Prerequisites:** Node 24 LTS, pnpm 11+, and Docker running.
+An AI agent that reviews a project plan against PMO standards, detects **compliance gaps**
+and **feasibility risks** (resource, timeline, dependency, historical velocity), reconciles
+**cross-dimension conflicts**, and produces a **DS07 review report** — keeping the PMO in
+control through human-in-the-loop checkpoints.
 
-```bash
-git clone https://github.com/Seta-International/agent-platform.git && cd agent-platform
-pnpm install
-cp .env.example .env     # then fill BETTER_AUTH_SECRET, CRYPTO_LOCAL_MASTER_KEY, OPENAI_API_KEY
-pnpm db:up               # Postgres + Redis + telemetry, all in Docker
-pnpm db:migrate          # apply every module's schema
-pnpm db:seed             # load the demo tenant (~300 users, plans, tasks)
-pnpm dev                 # serves the app at http://localhost:5173
-```
-
-Sign in at <http://localhost:5173/login> as `admin@hackathon.com` / `ChangeMe@2026`.
-
-New here? The full walkthrough — secret generation, env reference, data-loading
-options, and troubleshooting — is in **[`docs/dev-quickstart.md`](docs/dev-quickstart.md)**.
-To build a business module, see **[`docs/creating-modules.md`](docs/creating-modules.md)**.
+**Core differentiator:** a plan can pass the compliance checklist yet still be infeasible.
+The value is *cross-dimension reconciliation* — e.g. busy-rate looks fine (95%) while the
+same team's historical velocity is 62% of plan. Checklist tools miss this; our agent surfaces
+and explains it.
 
 ---
 
-## 3. Agent Runtime Architecture
+## Document map
 
-### Conceptual Runtime Flow
-
-An agentic request follows a recurring cycle. This high-level representation does not reference explicit file configurations or database queries.
-
-```mermaid
-flowchart TD
-    U([User Prompt / UI Action]) --> Intent[Analyze and Classify User Intent]
-
-    subgraph ReasoningEngine["Cognitive Reasoning & Delegation"]
-        Intent -->|Evaluate Complexity| Supervisor[Top-Level Supervisor Agent]
-        Supervisor -->|Delegate Sub-tasks| SubAgent[Activate Domain-Specific Specialist]
-    end
-
-    subgraph KnowledgeGathering["Signal Collection (Read-Only)"]
-        SubAgent --> Semantic[Vector Semantic Long-Term Search]
-        SubAgent --> ExternalAPI[Query Application Context via Read Tools]
-    end
-
-    KnowledgeGathering -->|Context Injected| SubAgent
-    SubAgent --> StateCheck{Requires State Mutation?}
-
-    StateCheck -->|No: Read-Only Response| EndStream([Stream Response back to UI])
-    StateCheck -->|Yes: System Mutation| HITL[Human-In-The-Loop: Await Approval]
-
-    HITL -->|Rejected| EndStream
-    HITL -->|Approved| Exec[Execute Atomic Transaction Write to DB]
-    Exec --> EventBus[Publish Event to Transactional Outbox]
-    EventBus --> Downstream[Trigger Async Background Jobs & Notifications]
-    Exec --> EndStream
-```
-
-### Detailed request flow
-
-For the full step-by-step sequence — request ingestion, RBAC, specialist delegation, read-tool context gathering, HITL approval, and the transactional outbox commit — see **[`docs/agent-architecture.md`](docs/agent-architecture.md)**.
+| Doc | Use it when you need… |
+|---|---|
+| [01-problem-and-scope.md](01-problem-and-scope.md) | The problem statement, in/out scope, personas, value targets, deadlines |
+| [02-dataset-reference.md](02-dataset-reference.md) | The exact data contract — DS01–DS08, REF, KPI norms, FKs, where the data lives |
+| [03-platform-mapping.md](03-platform-mapping.md) | How ProjectPlanGuard maps onto Seta (modules, schema, orchestrator) + the **stack decision** |
+| [04-agent-design.md](04-agent-design.md) | Orchestrator + 4 sub-agents, BDI model, agent flow, failure handling, memory |
+| [05-feasibility-rules-and-ds07.md](05-feasibility-rules-and-ds07.md) | The **scoring formulas** + the DS07 output schema (the computational core) |
+| [06-implementation-plan.md](06-implementation-plan.md) | Phased build plan, `pnpm gen module` steps, day-by-day to 23 Jun |
+| [07-test-and-uat.md](07-test-and-uat.md) | Test cases derived from the Answer_Key + the UAT scenario plan |
+| [08-deliverables-and-deploy.md](08-deliverables-and-deploy.md) | Submission checklist, 8-slide map, deploy pipeline (no secrets) |
+| [09-local-setup-notes.md](09-local-setup-notes.md) | Setup đã verify thực tế + gotchas (Node 24, `.env` fix, OpenAI key bắt buộc để boot, endpoint login) |
 
 ---
 
-## 4. Hackathon & Cloud Deployment
+## Quick facts
 
-> This section is specific to deploying on the Seta hackathon AWS environment.
-> For local development use [§2 Getting Started](#2-getting-started); for general
-> self-hosting (Docker Compose, AWS, scaling, upgrades) see [`docs/hosting/`](docs/hosting/).
+| | |
+|---|---|
+| **Problem ID** | PMO-01 |
+| **Mock dataset** | `PMO_01_ProjectPlan_Review.xlsx` (13 sheets) — see [02](02-dataset-reference.md) |
+| **Output artifact** | DS07 Project Plan Review Report (JSON + dashboard) |
+| **Target latency** | 3–5 hours manual → 10–15 minutes per plan |
+| **Platform** | Seta modular monolith — Hono · Mastra · Drizzle · Postgres+pgvector · AI SDK v6 · React 19 |
+| **Reference orchestrator** | `packages/staffing/` (agent-of-agents) — our template |
+| **Deploy target** | `https://team-1-hackathon.seta-international.com` (GitHub Actions → ECR → EC2) |
 
-> Each hackathon team is allocated a secure, isolated cloud sandbox environment in AWS.
+## Key dates (today = 2026-06-12)
 
-### Allocated Cloud Architecture per Team
+| Milestone | Date |
+|---|---|
+| Build period | 11–23 Jun 2026 |
+| **Submission deadline** | **23 Jun 2026, 23:59 GMT+7** (~11 days left) |
+| Final presentation & live demo | 28 Jun 2026 |
 
-```mermaid
-graph TD
-    subgraph Public["Browser"]
-        DNS["your_team.hackathon.seta-international.com"]
-    end
+---
 
-    subgraph Docker["AWS EC2"]
-        Server["Server"]
-        React["React SPA"]
-        Worker["Async Worker"]
-    end
+## Decision log
 
-    subgraph Private["VPC"]
-        RDS["AWS RDS Postgres 17"]
-        S3["AWS S3 Bucket"]
-    end
+Decisions that shape the build. Append here when a material choice is made.
 
-    DNS -->|HTTP/SSE Traffic| Docker
-    Docker -->|Local Network Connect| RDS
-    Docker -->|Secure Asset Sync| S3
-```
+| # | Decision | Rationale | Status |
+|---|---|---|---|
+| D1 | **Build on the Seta platform (Mastra/Hono/Drizzle), not the proposal's FastAPI/LangGraph/Next.js stack** | The assignment is to build on the boilerplate; the platform's `staffing` orchestrator already implements agent-of-agents + HITL + pgvector RAG. See [03](03-platform-mapping.md). | ✅ **Confirmed by team** — reuse what's already built; ignore the proposal stack |
+| D2 | **Data lives in a new `pmo` module schema** (DS01–DS08, REF as tables); historical projects (DS04/DS05) embedded into a per-tenant pgvector table for benchmark similarity | Respects module-boundary rules; reuses the embeddings/retrieval stack | ✅ Adopted |
+| D3 | **Orchestration follows the staffing pattern** — orchestrator delegates to Compliance / Feasibility / Benchmark / Synthesis sub-agents; deterministic stages skip the LLM | Matches platform's proven chat-runtime shape; deterministic scoring is auditable | ✅ Adopted |
+| D4 | **DS07 report generation is the terminal write, gated by a HITL approval card** | Platform rule: HITL on every write; PMO keeps final approval | ✅ Adopted |
+| D5 | LLM model | Use the **organizer-provided OpenAI API key** (set as `OPENAI_API_KEY`). Platform default `openai/gpt-5.5` via `AGENT_MODELS`; reasoning tier for Synthesis, fast tier for orchestrator/sub-agents. | ✅ **Confirmed** — organizer key |
 
-For the full deployment walkthrough — CI/CD setup, secrets configuration, ECR push, EC2 deployment, and troubleshooting — see **[`hackathon/DEPLOY.md`](hackathon/DEPLOY.md)**.
+---
+
+## Source materials (local, do NOT commit)
+
+These live in `/Users/kevintruong/Downloads/team-1/` and contain secrets — **never commit**:
+
+- `PMO_01_ProjectPlan_Review.xlsx` — the mock dataset (the only one aligned to our problem)
+- `TESA_PMO01_Proposal.pdf` — our submitted proposal
+- `SETA_Hackathon_2026_POC_Template.docx` — slide + demo template
+- `SETA_Hackathon_2026_UAT_Guide.docx` — UAT requirements
+- `DEPLOY.md` — deploy runbook
+- ⚠️ `AWS-CREDENTIALS.txt` and `team-1` (SSH private key) — **secrets; keep out of git**
