@@ -215,6 +215,97 @@ export function makeOrchestratorTools(deps: OrchestratorToolDeps) {
     },
   });
 
+  const pmo_simulateHeadcount = defineAgentTool({
+    id: 'pmo_simulateHeadcount',
+    name: 'Simulate Headcount Change',
+    description:
+      'What-if: recompute the Resource pillar and DS07 verdict if you add (+N) or remove (−N) ' +
+      'people of a role, e.g. "what if we add 2 ML Engineers to PLAN-002". Read-only — it never ' +
+      'issues anything. Other dimensions (Risk, dependencies, THI) are held, so the result honestly ' +
+      'shows when hiring does NOT make the plan feasible. If the role is unknown, it returns the ' +
+      'available roles to pick from.',
+    input: z.object({
+      planId: z.string().trim().min(1).describe('The plan id, e.g. "PLAN-002".'),
+      role: z.string().trim().min(1).describe('The role to change, e.g. "ML Engineer".'),
+      delta: z.number().int().describe('People to add (positive) or remove (negative).'),
+    }),
+    output: z.object({
+      planId: z.string(),
+      role: z.string(),
+      delta: z.number(),
+      roleFound: z.boolean(),
+      availableRoles: z.array(z.string()),
+      resourceRagBefore: z.string().nullable(),
+      resourceRagAfter: z.string().nullable(),
+      feasibilityBefore: z.string(),
+      feasibilityAfter: z.string(),
+      changed: z.boolean(),
+      note: z.string(),
+    }),
+    execute: async ({ planId, role, delta }) => {
+      assertPermission(ctx, 'pmo.plan.read');
+      await assertKnownPlan(port, ctx.tenantId, planId);
+      const sim = await port.simulateHeadcount({ tenantId: ctx.tenantId, planId, role, delta });
+      if (!sim) throw new Error(`Plan "${planId}" not found.`);
+      return {
+        planId: sim.plan_id,
+        role: sim.role,
+        delta: sim.delta,
+        roleFound: sim.role_found,
+        availableRoles: sim.available_roles,
+        resourceRagBefore: sim.resource_rag_before,
+        resourceRagAfter: sim.resource_rag_after,
+        feasibilityBefore: sim.feasibility_before,
+        feasibilityAfter: sim.feasibility_after,
+        changed: sim.changed,
+        note: sim.note,
+      };
+    },
+  });
+
+  const pmo_recommendHiring = defineAgentTool({
+    id: 'pmo_recommendHiring',
+    name: 'Recommend Hiring',
+    description:
+      'Inverse what-if: how many people to hire for the bottleneck role to bring peak busy to ' +
+      'target, e.g. "how many people do we need to hire to make PLAN-002 feasible". Honestly reports ' +
+      'whether hiring alone resolves the verdict and which non-resource pillars (Risk, dependencies) ' +
+      'still block it. Read-only.',
+    input: PlanArg,
+    output: z.object({
+      planId: z.string(),
+      role: z.string().nullable(),
+      projectedBusyPct: z.number().nullable(),
+      headcount: z.number().nullable(),
+      hiresToTarget: z.number(),
+      targetPct: z.number(),
+      feasibilityBefore: z.string(),
+      feasibilityAfterHiring: z.string(),
+      resolvesFeasibility: z.boolean(),
+      remainingBlockers: z.array(z.string()),
+      note: z.string(),
+    }),
+    execute: async ({ planId }) => {
+      assertPermission(ctx, 'pmo.plan.read');
+      await assertKnownPlan(port, ctx.tenantId, planId);
+      const rec = await port.recommendHiring({ tenantId: ctx.tenantId, planId });
+      if (!rec) throw new Error(`Plan "${planId}" not found.`);
+      return {
+        planId: rec.plan_id,
+        role: rec.bottleneck?.role ?? null,
+        projectedBusyPct: rec.bottleneck?.projected_busy_rate_pct ?? null,
+        headcount: rec.headcount,
+        hiresToTarget: rec.hires_to_target,
+        targetPct: rec.target_pct,
+        feasibilityBefore: rec.feasibility_before,
+        feasibilityAfterHiring: rec.feasibility_after_hiring,
+        resolvesFeasibility: rec.resolves_feasibility,
+        remainingBlockers: rec.remaining_blockers,
+        note: rec.note,
+      };
+    },
+  });
+
   const pmo_reviewPlan = makeReviewPlanTool({ port, ctx });
 
   return {
@@ -223,6 +314,8 @@ export function makeOrchestratorTools(deps: OrchestratorToolDeps) {
     pmo_checkCompliance,
     pmo_assessFeasibility,
     pmo_benchmarkVelocity,
+    pmo_simulateHeadcount,
+    pmo_recommendHiring,
     pmo_synthesizeReview,
     pmo_reviewPlan,
   };

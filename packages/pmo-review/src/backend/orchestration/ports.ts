@@ -8,6 +8,8 @@
 import type {
   BenchmarkAssessment,
   ComplianceResult,
+  HeadcountSimulation,
+  HiringRecommendation,
   PlanOverview,
   ReviewReport,
   SaveReviewReportResult,
@@ -36,6 +38,21 @@ export interface PmoReviewPort {
   /** The full deterministic DS07 roll-up (compliance + feasibility + benchmark
    *  + cross-dimension conflict). The synthesis sub-agent's authoritative draft. */
   synthesis(input: { tenantId: string; planId: string }): Promise<ReviewReport>;
+  /** What-if: recompute the Resource pillar + verdict under a headcount change
+   *  (+/- N of a role). Read-only — never writes, never goes through HITL. Null
+   *  for an unknown plan; flags an unknown role with the available roles. */
+  simulateHeadcount(input: {
+    tenantId: string;
+    planId: string;
+    role: string;
+    delta: number;
+  }): Promise<HeadcountSimulation | null>;
+  /** Inverse what-if: how many people to hire for the bottleneck role to hit the
+   *  busy target, and whether that alone makes the plan feasible. Null when unknown. */
+  recommendHiring(input: {
+    tenantId: string;
+    planId: string;
+  }): Promise<HiringRecommendation | null>;
   /** Persist the issued DS07 report + emit pmo.report.issued. The ONLY write,
    *  guarded by the orchestrator behind a HITL approval gate. */
   issueReport(input: {

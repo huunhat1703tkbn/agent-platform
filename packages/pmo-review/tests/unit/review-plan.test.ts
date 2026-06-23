@@ -67,6 +67,8 @@ function makeFakePort(overrides: Partial<PmoReviewPort> = {}): PmoReviewPort {
     feasibility: vi.fn(),
     benchmark: vi.fn(),
     synthesis: vi.fn(async ({ planId }) => fakeDraft(planId)),
+    simulateHeadcount: vi.fn(async () => null),
+    recommendHiring: vi.fn(async () => null),
     issueReport: vi.fn(
       async ({ planId }): Promise<SaveReviewReportResult> => ({
         report_id: 'rep-1',

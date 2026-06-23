@@ -104,3 +104,15 @@ export {
   type RiskWarning,
   rollupFeasibilityStatus,
 } from './backend/domain/synthesis.ts';
+export {
+  DEFAULT_TARGET_BUSY_PCT,
+  type HeadcountSimulation,
+  type HiringRecommendation,
+  hiringToTarget,
+  type RoleChangeSimulation,
+  type RoleProjection,
+  recommendHiring,
+  scaleProjectedBusy,
+  simulateHeadcount,
+  simulateRoleChange,
+} from './backend/domain/whatif.ts';

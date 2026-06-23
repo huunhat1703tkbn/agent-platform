@@ -13,8 +13,10 @@ import {
   type DependencyResult,
   getPlanOverview,
   listPlans,
+  recommendHiring,
   saveReviewReport,
   scoreCompliance,
+  simulateHeadcount,
   validateDependencies,
 } from '@seta/pmo';
 import type { PmoReviewPort } from './ports.ts';
@@ -53,6 +55,11 @@ export function makePmoReviewPort(): PmoReviewPort {
     benchmark: ({ tenantId, planId }) => assessBenchmark({ tenantId, planId }),
 
     synthesis: ({ tenantId, planId }) => buildReviewReport({ tenantId, planId }),
+
+    simulateHeadcount: ({ tenantId, planId, role, delta }) =>
+      simulateHeadcount({ tenantId, planId, role, delta }),
+
+    recommendHiring: ({ tenantId, planId }) => recommendHiring({ tenantId, planId }),
 
     issueReport: ({ tenantId, actorUserId, planId }) =>
       saveReviewReport({ session: { tenant_id: tenantId, user_id: actorUserId }, planId }),

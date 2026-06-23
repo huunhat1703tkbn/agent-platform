@@ -165,6 +165,38 @@ describe('pmo-review orchestrator assembly', () => {
     expect(out.result.message).toBe('Hi! Which plan should I review?');
   });
 
+  it('what-if headcount question → { message } from the LLM prose', async () => {
+    const agent = make(
+      [
+        {
+          payload: {
+            toolName: 'pmo_simulateHeadcount',
+            result: {
+              planId: 'PLAN-002',
+              role: 'ML Engineer',
+              delta: 2,
+              roleFound: true,
+              resourceRagAfter: 'Yellow',
+              feasibilityAfter: 'Not feasible (Red)',
+              changed: false,
+              note: 'Resource improves but the verdict is unchanged.',
+            },
+          },
+        },
+      ],
+      [{ payload: { toolName: 'pmo_simulateHeadcount', args: { planId: 'PLAN-002' } } }],
+      'Adding 2 ML Engineers eases the Resource pillar, but PLAN-002 stays Not feasible (Red).',
+    );
+    const out = await agent.run(
+      { userText: 'what if we add 2 ML to PLAN-002?', taskId: null },
+      ctx,
+    );
+
+    expect(out.result.message).toContain('stays Not feasible');
+    expect(out.result.review).toBeUndefined();
+    expect(out.result.issued).toBeUndefined();
+  });
+
   it('nothing useful → honest capability message', async () => {
     const agent = make([], [], '');
     const out = await agent.run({ userText: '???', taskId: null }, ctx);
